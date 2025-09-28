@@ -1,4 +1,4 @@
-// JSON muss im Repo-Root liegen: products.json
+// JSON im Repo-Root: products.json
 const API_URL = 'products.json';
 
 const statusEl = document.getElementById('status');
@@ -6,7 +6,7 @@ const gridEl = document.getElementById('grid');
 const skeletonsEl = document.getElementById('skeletons');
 const reloadBtn = document.getElementById('reloadBtn');
 
-// Modal-Refs
+// Modal
 const modal = document.getElementById('modal');
 const modalImg = document.getElementById('modalImg');
 const modalTitle = document.getElementById('modalTitle');
@@ -20,14 +20,15 @@ const CANVAS = document.querySelector('.canvas');
 
 const fmtEUR = new Intl.NumberFormat('de-DE', { style:'currency', currency:'EUR' });
 
+// ----------------------------------------------------
+
 async function loadProducts(){
   try{
     setSkeleton(true);
     statusEl.textContent = 'Lade Werke…';
     gridEl.hidden = true;
 
-    const url = `${API_URL}?v=${Date.now()}`; // Cache-Buster
-    const res = await fetch(url, { cache: 'no-store' });
+    const res = await fetch(`${API_URL}?v=${Date.now()}`, { cache:'no-store' });
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
@@ -61,49 +62,61 @@ function renderGrid(items){
   }
 }
 
-/* ===== Detail + Zoom mit Auto-Fit ===== */
-let z = 1, tx = 0, ty = 0;          // scale & translation
+// ===== Detail + garantiertes Auto-Fit beim Öffnen =====
+let z = 1, tx = 0, ty = 0;   // Zoom & Translation
+let userChangedZoom = false;
+let ro; // ResizeObserver
 
 function openModal(p){
   modalTitle.textContent = p.name;
   modalPrice.textContent = fmtEUR.format(p.price);
-  modalImg.src = p.image;
-
   openProduct.style.display = p.product_url ? 'inline-block' : 'none';
   if (p.product_url) openProduct.href = p.product_url;
 
-  // Reset
-  z = 1; tx = 0; ty = 0;
-  applyTransform();
+  // zurücksetzen
+  z = 1; tx = 0; ty = 0; userChangedZoom = false;
+  modalImg.style.transform = 'translate(0px, 0px) scale(1)';
 
-  // Wenn Bild geladen -> Fit berechnen
-  modalImg.onload = () => { fitImageToCanvas(); };
-  if (modalImg.complete) fitImageToCanvas();
+  // Bild setzen & Auto-Fit ausführen, nachdem es sichtbar ist
+  modalImg.onload = () => requestAnimationFrame(fitImageToCanvas);
+  modal.showModal();           // zuerst sichtbar machen, damit Maße stimmen
+  modalImg.src = p.image;      // dann Quelle setzen
+
+  // Falls aus Cache (onload evtl. nicht gefeuert)
+  if (modalImg.complete && modalImg.naturalWidth) {
+    requestAnimationFrame(fitImageToCanvas);
+  }
 
   enablePanning(modalImg);
   enableWheelZoom(modalImg);
 
-  modal.showModal();
+  // Re-Fit bei Größenänderung (Rotation/Resize) – aber nur solange der Nutzer noch nicht gezoomt hat
+  if (ro) ro.disconnect();
+  ro = new ResizeObserver(()=>{ if(!userChangedZoom) fitImageToCanvas(); });
+  ro.observe(CANVAS);
 }
 
 function fitImageToCanvas(){
-  const cw = CANVAS.clientWidth;
-  const ch = CANVAS.clientHeight;
-  const iw = modalImg.naturalWidth || modalImg.width;
-  const ih = modalImg.naturalHeight || modalImg.height;
+  const padding = 16; // kleiner Rand
+  const cw = Math.max(10, CANVAS.clientWidth  - padding);
+  const ch = Math.max(10, CANVAS.clientHeight - padding);
+
+  const iw = modalImg.naturalWidth;
+  const ih = modalImg.naturalHeight;
   if (!iw || !ih) return;
 
-  // Maßstab, damit das ganze Bild in die Canvas passt (CONTAIN)
-  const fit = Math.min(cw / iw, ch / ih);
+  // Komplett darstellen: "contain" – NICHT größer als 1, mit etwas Luft (0.95)
+  const contain = Math.min(cw/iw, ch/ih);
+  const startZ  = Math.min(1, contain) * 0.95;
 
-  z = fit; tx = 0; ty = 0;
+  z = startZ; tx = 0; ty = 0;
   applyTransform();
 
-  // Slider an Fit anpassen
-  zoomRange.min = (fit * 0.5).toFixed(2);
-  zoomRange.max = Math.max(6, fit * 4).toFixed(2);
-  zoomRange.value = fit.toFixed(2);
-  zoomVal.textContent = `${Number(zoomRange.value).toFixed(1)}×`;
+  // Slider passend einstellen
+  zoomRange.min   = Math.max(0.1, startZ * 0.5).toFixed(2);
+  zoomRange.max   = Math.max(2.0, startZ * 3.0).toFixed(2);
+  zoomRange.value = startZ.toFixed(2);
+  zoomVal.textContent = `${startZ.toFixed(1)}×`;
 }
 
 function applyTransform(){
@@ -111,21 +124,27 @@ function applyTransform(){
   zoomVal.textContent = `${z.toFixed(1)}×`;
 }
 
-// Slider
 zoomRange.addEventListener('input', e=>{
+  userChangedZoom = true;
   z = clamp(+e.target.value, +zoomRange.min, +zoomRange.max);
   applyTransform();
 });
 
-// Reset
-resetZoomBtn.addEventListener('click', ()=>{ fitImageToCanvas(); });
-closeModal.addEventListener('click', ()=> modal.close());
+resetZoomBtn.addEventListener('click', ()=>{
+  userChangedZoom = false;
+  fitImageToCanvas();
+});
 
-/* Drag/Pan – iPhone freundlich */
+closeModal.addEventListener('click', ()=>{
+  if (ro) ro.disconnect();
+  modal.close();
+});
+
+/* Drag/Pan – iPhone-freundlich */
 function enablePanning(el){
   let dragging = false, sx=0, sy=0, btx=0, bty=0;
   const down = ev => {
-    dragging = true;
+    dragging = true; userChangedZoom = true;
     const p = point(ev); sx = p.x; sy = p.y; btx = tx; bty = ty;
     ev.preventDefault();
   };
@@ -148,11 +167,10 @@ function enablePanning(el){
 /* Wheel-Zoom (Desktop) */
 function enableWheelZoom(el){
   el.onwheel = e=>{
-    e.preventDefault();
+    e.preventDefault(); userChangedZoom = true;
     const delta = Math.sign(e.deltaY);
     const factor = 1 - delta * 0.12;
-    const newZ = clamp(z * factor, +zoomRange.min, +zoomRange.max);
-    z = newZ;
+    z = clamp(z * factor, +zoomRange.min, +zoomRange.max);
     applyTransform();
   };
 }
@@ -162,5 +180,5 @@ function clamp(v,min,max){ return Math.max(min, Math.min(max,v)); }
 function point(e){ return { x:e.clientX, y:e.clientY }; }
 function escapeHtml(s){ return s.replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
 
-document.getElementById('reloadBtn').addEventListener('click', loadProducts);
+reloadBtn.addEventListener('click', loadProducts);
 loadProducts();
