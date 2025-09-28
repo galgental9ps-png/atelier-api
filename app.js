@@ -50,7 +50,7 @@ function renderGrid(items){
 
   for(const p of items){
     const card = document.createElement('article');
-    card.className = 'card glass';
+    card.className = 'card';
     card.innerHTML = `
       <div class="thumb"><img src="${p.image}" alt="${escapeHtml(p.name)}" loading="lazy"></div>
       <div class="info">
@@ -62,8 +62,8 @@ function renderGrid(items){
   }
 }
 
-// ===== Detail + garantiertes Auto-Fit beim Öffnen =====
-let z = 1, tx = 0, ty = 0;   // Zoom & Translation
+// ===== Detail + Auto-Fit beim Öffnen, sauberes X =====
+let z = 1, tx = 0, ty = 0;
 let userChangedZoom = false;
 let ro; // ResizeObserver
 
@@ -77,12 +77,11 @@ function openModal(p){
   z = 1; tx = 0; ty = 0; userChangedZoom = false;
   modalImg.style.transform = 'translate(0px, 0px) scale(1)';
 
-  // Sichtbar machen, dann Bild setzen (damit Canvas-Maße stimmen)
+  // Erst sichtbar machen, dann Bild setzen (korrekte Maße)
   modal.showModal();
   modalImg.onload = () => requestAnimationFrame(fitImageToCanvas);
   modalImg.src = p.image;
 
-  // Falls Cache: dennoch fitten
   if (modalImg.complete && modalImg.naturalWidth) {
     requestAnimationFrame(fitImageToCanvas);
   }
@@ -90,14 +89,14 @@ function openModal(p){
   enablePanning(modalImg);
   enableWheelZoom(modalImg);
 
-  // Re-Fit bei Canvas-Resize (Rotation etc.), solange Nutzer nicht gezoomt hat
+  // Refit bei Größenänderung (Rotation), solange Nutzer nicht gezoomt hat
   if (ro) ro.disconnect();
   ro = new ResizeObserver(()=>{ if(!userChangedZoom) fitImageToCanvas(); });
   ro.observe(CANVAS);
 }
 
 function fitImageToCanvas(){
-  const padding = 16; // kleiner Rand
+  const padding = 16;
   const cw = Math.max(10, CANVAS.clientWidth  - padding);
   const ch = Math.max(10, CANVAS.clientHeight - padding);
 
@@ -105,14 +104,12 @@ function fitImageToCanvas(){
   const ih = modalImg.naturalHeight;
   if (!iw || !ih) return;
 
-  // Komplett darstellen (contain) + kleiner Rand, nie > 1 starten
   const contain = Math.min(cw/iw, ch/ih);
-  const startZ  = Math.min(1, contain) * 0.95;
+  const startZ  = Math.min(1, contain) * 0.95; // 95% – etwas Luft
 
   z = startZ; tx = 0; ty = 0;
   applyTransform();
 
-  // Slider passend einstellen
   zoomRange.min   = Math.max(0.1, startZ * 0.5).toFixed(2);
   zoomRange.max   = Math.max(2.0, startZ * 3.0).toFixed(2);
   zoomRange.value = startZ.toFixed(2);
