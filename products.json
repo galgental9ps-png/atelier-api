@@ -4,7 +4,7 @@
     "name": "Rote Treppe",
     "price": 249.00,
     "currency": "EUR",
-    "image": "https://galgental9ps-png.github.io/atelier-api/images/rote_treppe.jpg",
+    "image": "https://galgental9ps-png.github.io/atelier-api/rote_treppe.jpg",
     "available": true
   },
   {
@@ -12,7 +12,7 @@
     "name": "Echo der Gedanken",
     "price": 189.00,
     "currency": "EUR",
-    "image": "https://galgental9ps-png.github.io/atelier-api/images/echo_der_gedanken.jpg",
+    "image": "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg",
     "available": true
   },
   {
@@ -20,7 +20,7 @@
     "name": "Grenzflächen",
     "price": 149.00,
     "currency": "EUR",
-    "image": "https://galgental9ps-png.github.io/atelier-api/images/grenzflaechen.jpg",
+    "image": "https://galgental9ps-png.github.io/atelier-api/grenzflaechen.jpg",
     "available": true
   }
 ]
