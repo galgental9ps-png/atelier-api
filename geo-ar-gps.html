@@ -18,7 +18,6 @@
 </head>
 <body>
 
-<!-- Start-Overlay (Pflicht: User-Tap für Kamera/Kompass/Location) -->
 <div id="overlay">
   <div>
     <h1 style="margin:0 0 6px">Geo-AR starten</h1>
@@ -31,7 +30,6 @@
   </div>
 </div>
 
-<!-- Geo-AR Szene -->
 <a-scene
   id="scene"
   embedded
@@ -39,18 +37,17 @@
   vr-mode-ui="enabled:false"
   renderer="antialias:true;alpha:true"
   arjs="sourceType: webcam; videoTexture:true; debugUIEnabled:false; trackingMethod: best;">
-  
-  <!-- Dein Bild an fester GPS-Position (Breite/Höhe in Metern) -->
+
+  <!-- Bild an fester GPS-Position (Breite/Höhe in Metern) -->
   <a-image
     id="art"
     src="https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg"
     gps-entity-place="latitude: 48.366184; longitude: 10.867701;"
     look-at="[gps-camera]"
-    scale="6 4.5 1"      <!-- ≈6 m breit, 4:3 -->
+    scale="6 4.5 1"
     rotation="0 0 0">
   </a-image>
 
-  <!-- Kamera mit GPS/Kompass -->
   <a-camera gps-camera rotation-reader></a-camera>
 </a-scene>
 
@@ -62,7 +59,7 @@ const scene   = document.getElementById('scene');
 const status  = document.getElementById('status');
 
 document.getElementById('start').addEventListener('click', async () => {
-  // iOS: Bewegungssensor explizit erlauben (für Kompass/Ausrichtung)
+  // iOS: Bewegungssensor-Rechte anfordern (Kompass/Ausrichtung)
   try {
     if (typeof DeviceMotionEvent !== 'undefined' &&
         typeof DeviceMotionEvent.requestPermission === 'function') {
@@ -72,12 +69,11 @@ document.getElementById('start').addEventListener('click', async () => {
         typeof DeviceOrientationEvent.requestPermission === 'function') {
       await DeviceOrientationEvent.requestPermission().catch(()=>{});
     }
-  } catch(e){ /* ignore */ }
+  } catch(e){}
 
   overlay.style.display = 'none';
   scene.style.display   = 'block';
 
-  // Standort anstoßen (damit iOS sofort fragt)
   if ('geolocation' in navigator) {
     navigator.geolocation.getCurrentPosition(
       pos => status.textContent = `GPS aktiv (±${Math.round(pos.coords.accuracy)} m)`,
