@@ -1,11 +1,19 @@
 :root{
   --gap:16px;
-  --card-ratio: 4/3;   /* Einheitliches Kachel-Format */
+  /* Kachel-Format: 4:3 (75%). Für 1:1 -> 100%, für 16:9 -> 56.25% */
+  --ratio-pct: 75%;
   --thumb-bg: #f1f2f5;
   --text:#0e0f12; --muted:#666;
+  --surface: rgba(255,255,255,.75);
+  --border: rgba(0,0,0,.08);
+  --shadow: 0 10px 26px rgba(0,0,0,.08);
 }
 @media (prefers-color-scheme: dark){
-  :root{ --thumb-bg:#1d2230; --text:#e9ebf1; --muted:#a2a7b7; }
+  :root{
+    --thumb-bg:#1d2230; --text:#e9ebf1; --muted:#a2a7b7;
+    --surface: rgba(25,28,36,.7); --border: rgba(255,255,255,.08);
+    --shadow: 0 14px 28px rgba(0,0,0,.45);
+  }
 }
 
 *{box-sizing:border-box}
@@ -23,7 +31,7 @@ body{margin:0; font-family:system-ui, -apple-system, Segoe UI, Roboto, Inter, sa
 
 .status{ text-align:center; color:var(--muted); padding:18px }
 
-main{ max-width:1200px; margin:0 auto; padding: 8px 16px 40px }
+main{ max-width:1200px; margin:0 auto; padding: 8px 16px 64px }
 
 .grid{
   display:grid;
@@ -31,18 +39,13 @@ main{ max-width:1200px; margin:0 auto; padding: 8px 16px 40px }
   gap: var(--gap);
 }
 
-/* Karten: alle gleich groß, Bilder NICHT verzerren (contain) */
-/* Karten (gleich groß), iPhone-sicher ohne aspect-ratio) */
+/* Karten: iPhone-sicher gleiche Höhe via Padding-Ratio, Bilder NICHT verzerren (contain) */
 .card{
-  border:1px solid rgba(0,0,0,.06); border-radius:14px; overflow:hidden; background:rgba(255,255,255,.7);
-  box-shadow: 0 10px 26px rgba(0,0,0,.08); transition: transform .12s ease;
-}
-@media (prefers-color-scheme: dark){
-  .card{ background:rgba(25,28,36,.6); border-color:rgba(255,255,255,.06); box-shadow: 0 14px 28px rgba(0,0,0,.45); }
+  border:1px solid var(--border); border-radius:14px; overflow:hidden; background:var(--surface);
+  box-shadow: var(--shadow); transition: transform .12s ease;
 }
 .card:hover{ transform: translateY(-2px) }
 
-/* Ratio-Box 4:3 (anpassbar: 1:1 -> 100%; 16:9 -> 56.25%) */
 .thumb{
   position: relative;
   background: var(--thumb-bg);
@@ -50,20 +53,36 @@ main{ max-width:1200px; margin:0 auto; padding: 8px 16px 40px }
 .thumb::before{
   content:"";
   display:block;
-  padding-top: 75%; /* 4:3 */
+  padding-top: var(--ratio-pct);  /* Ratio-Box */
 }
-/* Bild füllt die Box ohne Verzerren (contain), mit kleinem Innenabstand */
 .thumb img{
   position:absolute; inset:8px;
   width: calc(100% - 16px);
   height: calc(100% - 16px);
-  object-fit: contain;    /* Original-Proportionen */
+  object-fit: contain;     /* Original-Proportionen beibehalten */
   object-position: center;
   display:block;
   -webkit-user-drag: none;
   user-select: none;
   -webkit-user-select: none;
   image-rendering: auto;
+}
+
+.info{ padding:12px 14px 14px }
+.title{ font-weight:700; margin:2px 0 6px; line-height:1.2 }
+.price{ margin:0; font-weight:700; color:var(--text) }
+
+.footer{
+  position:fixed; left:0; right:0; bottom:0; padding:10px 14px; text-align:center; color:var(--muted);
+  background: linear-gradient(to top, rgba(255,255,255,.8), transparent);
+}
+@media (prefers-color-scheme: dark){
+  .footer{ background: linear-gradient(to top, rgba(16,18,24,.7), transparent); }
+}
+
+.icon-btn{
+  position:absolute; top:10px; right:10px; width:40px; height:40px; border-radius:12px;
+  border:1px solid var(--border); background:var(--surface); cursor:pointer;
 }
 
 /* Modal */
@@ -78,15 +97,19 @@ dialog::backdrop{ background: rgba(0,0,0,.5); }
   border-radius:12px; overflow:hidden; position:relative;
   display:flex; align-items:center; justify-content:center;
 }
+.canvas, #modalImg{
+  touch-action: none;        /* iPhone: verhindert Seitenscroll beim Panning/Zoom */
+  -webkit-user-select: none; user-select: none;
+}
 #modalImg{
-  transform-origin:center center;   /* sauberer Zoom aus der Mitte */
+  will-change: transform;
+  transform-origin: center center;  /* sauberer Zoom */
   max-width:none; max-height:none;  /* wir steuern selbst via transform */
 }
 
 .meta{ display:flex; flex-direction:column; gap:12px }
 .zoomctl{ display:flex; align-items:center; gap:10px }
-.link{ text-decoration:none; border:1px solid #d8dbe6; padding:8px 12px; border-radius:8px; }
-@media (prefers-color-scheme: dark){ .link{ border-color:#30364a; color:#e9ebf1 } }
+.link{ text-decoration:none; border:1px solid var(--border); padding:8px 12px; border-radius:8px; }
 
 /* Skeletons */
 .skeleton .thumb{ position:relative; overflow:hidden }
