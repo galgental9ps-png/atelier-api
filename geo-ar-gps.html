@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Geo-AR – Echo der Gedanken</title>
 
-<!-- A-Frame + AR.js (GPS) -->
+<!-- A-Frame & AR.js (GPS) -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
 
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,-apple-system,Segoe UI,Inter,Roboto,sans-serif;color:#fff}
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:-apple-system,system-ui,Segoe UI,Inter,Roboto,sans-serif;color:#fff}
   #overlay{position:fixed;inset:0;display:grid;place-items:center;background:linear-gradient(#0009,#0009);z-index:10;text-align:center;padding:16px}
   .btn{padding:12px 14px;border:0;border-radius:12px;font-weight:700;color:#fff;background:#0ea5e9}
   #status{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);background:#0009;padding:8px 12px;border-radius:8px;z-index:5}
@@ -20,70 +20,113 @@
 
 <div id="overlay">
   <div>
-    <h1 style="margin:0 0 6px">Geo-AR starten</h1>
-    <p style="opacity:.85;max-width:520px;margin:0 0 12px">
-      Erlaube Kamera, Bewegungssensor &amp; Standort. Gehe zur Position
-      <b>48.366184, 10.867701</b>. Das Bild steht dort im Raum.
-    </p>
-    <button id="start" class="btn">Kamera &amp; Standort erlauben</button>
-    <div style="font-size:13px;opacity:.75;margin-top:8px">Tipp: Draußen testen und Kompass kalibrieren (∞-Bewegung).</div>
+    <h1 style="margin:0 0 8px">Geo-AR starten</h1>
+    <ol style="text-align:left;max-width:520px;margin:0 auto 12px;padding-left:18px;opacity:.9">
+      <li>Kamera erlauben</li>
+      <li>Bewegungssensor (iOS) erlauben</li>
+      <li>Standort erlauben</li>
+    </ol>
+    <button id="start" class="btn">Los geht’s</button>
+    <div style="font-size:13px;opacity:.75;margin-top:8px">Tipp: Draußen testen & Kompass kalibrieren (∞-Bewegung).</div>
   </div>
 </div>
 
-<a-scene
-  id="scene"
-  embedded
-  style="display:none"
-  vr-mode-ui="enabled:false"
-  renderer="antialias:true;alpha:true"
-  arjs="sourceType: webcam; videoTexture:true; debugUIEnabled:false; trackingMethod: best;">
-
-  <!-- Bild an fester GPS-Position (Breite/Höhe in Metern) -->
-  <a-image
-    id="art"
-    src="https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg"
-    gps-entity-place="latitude: 48.366184; longitude: 10.867701;"
-    look-at="[gps-camera]"
-    scale="6 4.5 1"
-    rotation="0 0 0">
-  </a-image>
-
-  <a-camera gps-camera rotation-reader></a-camera>
-</a-scene>
-
 <div id="status">Bereit…</div>
 
+<!-- Die Szene wird per JS nach Freigaben erzeugt -->
+<div id="mount"></div>
+
 <script>
+const TARGET = { lat: 48.366184, lon: 10.867701 };
+const statusEl = document.getElementById('status');
+const mount = document.getElementById('mount');
 const overlay = document.getElementById('overlay');
-const scene   = document.getElementById('scene');
-const status  = document.getElementById('status');
 
-document.getElementById('start').addEventListener('click', async () => {
-  // iOS: Bewegungssensor-Rechte anfordern (Kompass/Ausrichtung)
-  try {
-    if (typeof DeviceMotionEvent !== 'undefined' &&
-        typeof DeviceMotionEvent.requestPermission === 'function') {
-      await DeviceMotionEvent.requestPermission().catch(()=>{});
-    }
-    if (typeof DeviceOrientationEvent !== 'undefined' &&
-        typeof DeviceOrientationEvent.requestPermission === 'function') {
-      await DeviceOrientationEvent.requestPermission().catch(()=>{});
-    }
-  } catch(e){}
+document.getElementById('start').addEventListener('click', init);
 
-  overlay.style.display = 'none';
-  scene.style.display   = 'block';
+async function init(){
+  try{
+    // 1) Kamera (User-Geste vorhanden)
+    await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' }, audio:false });
+    statusEl.textContent = 'Kamera ok.';
 
-  if ('geolocation' in navigator) {
-    navigator.geolocation.getCurrentPosition(
-      pos => status.textContent = `GPS aktiv (±${Math.round(pos.coords.accuracy)} m)`,
-      err => status.textContent = 'Standort-Fehler: ' + err.message,
-      { enableHighAccuracy:true, timeout:10000, maximumAge:0 }
-    );
-  } else {
-    status.textContent = 'Geolocation wird nicht unterstützt.';
+    // 2) Motion/Orientation (iOS benötigt Extra-Dialog)
+    await requestMotionIfNeeded();
+    statusEl.textContent = 'Kamera + Sensor ok.';
+
+    // 3) Einmal Standort abholen, damit iOS den Dialog zeigt
+    await getOnceLocation();
+    statusEl.textContent = 'GPS aktiv. Starte AR…';
+
+    overlay.style.display = 'none';
+
+    // 4) Szene NACH allen Freigaben erzeugen
+    buildScene();
+  }catch(err){
+    statusEl.textContent = 'Fehler: ' + err.message;
   }
-});
+}
+
+function requestMotionIfNeeded(){
+  return new Promise(async (resolve) => {
+    try{
+      if (typeof DeviceMotionEvent !== 'undefined' &&
+          typeof DeviceMotionEvent.requestPermission === 'function') {
+        await DeviceMotionEvent.requestPermission().catch(()=>{});
+      }
+      if (typeof DeviceOrientationEvent !== 'undefined' &&
+          typeof DeviceOrientationEvent.requestPermission === 'function') {
+        await DeviceOrientationEvent.requestPermission().catch(()=>{});
+      }
+    }catch(e){}
+    resolve(); // auf Android/Desktops einfach weiter
+  });
+}
+
+function getOnceLocation(){
+  return new Promise((resolve, reject) => {
+    if (!('geolocation' in navigator)) return reject(new Error('Geolocation nicht unterstützt'));
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve(pos),
+      err => reject(new Error('Standort: ' + err.message)),
+      { enableHighAccuracy:true, timeout:15000, maximumAge:0 }
+    );
+  });
+}
+
+// Szene programmatisch einsetzen (vermeidet iOS-Initialisierungs-Bugs)
+function buildScene(){
+  mount.innerHTML = `
+  <a-scene
+    embedded
+    vr-mode-ui="enabled:false"
+    renderer="antialias:true; alpha:true"
+    arjs="sourceType: webcam; videoTexture:true; debugUIEnabled:false; trackingMethod: best; facingMode: environment;">
+
+    <!-- Debug: roter Würfel 5m vor der Kamera -->
+    <a-box color="tomato" depth="1" height="1" width="1" position="0 0 -5"></a-box>
+
+    <!-- Dein Bild an GPS-Position -->
+    <a-image
+      src="https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg"
+      gps-entity-place="latitude: ${TARGET.lat}; longitude: ${TARGET.lon};"
+      look-at="[gps-camera]"
+      scale="6 4.5 1"
+      rotation="0 0 0">
+    </a-image>
+
+    <a-camera gps-camera rotation-reader></a-camera>
+  </a-scene>`;
+
+  // kleines Status-Update zur Genauigkeit
+  if ('geolocation' in navigator){
+    navigator.geolocation.watchPosition(
+      pos => { statusEl.textContent = `GPS aktiv (±${Math.round(pos.coords.accuracy)} m)`; },
+      err => { statusEl.textContent = 'Standort-Fehler: ' + err.message; },
+      { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
+    );
+  }
+}
 </script>
 </body>
 </html>
