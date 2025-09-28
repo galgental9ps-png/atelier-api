@@ -5,15 +5,17 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Geo-AR – Echo der Gedanken</title>
 
-<!-- A-Frame & AR.js (GPS) -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
 
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:-apple-system,system-ui,Segoe UI,Inter,Roboto,sans-serif;color:#fff}
-  #overlay{position:fixed;inset:0;display:grid;place-items:center;background:linear-gradient(#0009,#0009);z-index:10;text-align:center;padding:16px}
-  .btn{padding:12px 14px;border:0;border-radius:12px;font-weight:700;color:#fff;background:#0ea5e9}
-  #status{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);background:#0009;padding:8px 12px;border-radius:8px;z-index:5}
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;
+    font-family:-apple-system,system-ui,Segoe UI,Inter,Roboto,sans-serif}
+  #overlay{position:fixed;inset:0;display:grid;place-items:center;
+    background:linear-gradient(#0009,#0009);z-index:10;text-align:center;padding:16px}
+  .btn{padding:12px 14px;border:0;border-radius:12px;font-weight:700;color:#fff;background:#0ea5e9;margin:0 6px}
+  #status{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);
+    background:#0009;padding:8px 12px;border-radius:8px;z-index:5;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -21,111 +23,117 @@
 <div id="overlay">
   <div>
     <h1 style="margin:0 0 8px">Geo-AR starten</h1>
-    <ol style="text-align:left;max-width:520px;margin:0 auto 12px;padding-left:18px;opacity:.9">
-      <li>Kamera erlauben</li>
-      <li>Bewegungssensor (iOS) erlauben</li>
-      <li>Standort erlauben</li>
-    </ol>
+    <p style="opacity:.85;max-width:560px;margin:0 auto 12px">
+      Erlaube nacheinander <b>Kamera</b>, <b>Bewegungssensor</b> (iOS) und <b>Standort</b>.
+      Das Bild steht bei <b>48.366184, 10.867701</b>. Zum Testen gibt’s „Hier testen“.
+    </p>
     <button id="start" class="btn">Los geht’s</button>
+    <button id="spawnHere" class="btn" style="background:#10b981">Hier testen</button>
     <div style="font-size:13px;opacity:.75;margin-top:8px">Tipp: Draußen testen & Kompass kalibrieren (∞-Bewegung).</div>
   </div>
 </div>
 
 <div id="status">Bereit…</div>
-
-<!-- Die Szene wird per JS nach Freigaben erzeugt -->
 <div id="mount"></div>
 
 <script>
 const TARGET = { lat: 48.366184, lon: 10.867701 };
 const statusEl = document.getElementById('status');
-const mount = document.getElementById('mount');
-const overlay = document.getElementById('overlay');
+const mount    = document.getElementById('mount');
+const overlay  = document.getElementById('overlay');
+let sceneEl, localImgEl;
 
 document.getElementById('start').addEventListener('click', init);
+document.getElementById('spawnHere').addEventListener('click', spawnHere);
 
 async function init(){
   try{
-    // 1) Kamera (User-Geste vorhanden)
-    await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' }, audio:false });
-    statusEl.textContent = 'Kamera ok.';
-
-    // 2) Motion/Orientation (iOS benötigt Extra-Dialog)
+    await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
     await requestMotionIfNeeded();
-    statusEl.textContent = 'Kamera + Sensor ok.';
-
-    // 3) Einmal Standort abholen, damit iOS den Dialog zeigt
     await getOnceLocation();
-    statusEl.textContent = 'GPS aktiv. Starte AR…';
-
     overlay.style.display = 'none';
-
-    // 4) Szene NACH allen Freigaben erzeugen
     buildScene();
+    watchDistance();
   }catch(err){
     statusEl.textContent = 'Fehler: ' + err.message;
   }
 }
 
 function requestMotionIfNeeded(){
-  return new Promise(async (resolve) => {
+  return new Promise(async (resolve)=> {
     try{
-      if (typeof DeviceMotionEvent !== 'undefined' &&
-          typeof DeviceMotionEvent.requestPermission === 'function') {
+      if (typeof DeviceMotionEvent?.requestPermission === 'function') {
         await DeviceMotionEvent.requestPermission().catch(()=>{});
       }
-      if (typeof DeviceOrientationEvent !== 'undefined' &&
-          typeof DeviceOrientationEvent.requestPermission === 'function') {
+      if (typeof DeviceOrientationEvent?.requestPermission === 'function') {
         await DeviceOrientationEvent.requestPermission().catch(()=>{});
       }
     }catch(e){}
-    resolve(); // auf Android/Desktops einfach weiter
+    resolve();
   });
 }
 
 function getOnceLocation(){
-  return new Promise((resolve, reject) => {
-    if (!('geolocation' in navigator)) return reject(new Error('Geolocation nicht unterstützt'));
-    navigator.geolocation.getCurrentPosition(
-      pos => resolve(pos),
-      err => reject(new Error('Standort: ' + err.message)),
-      { enableHighAccuracy:true, timeout:15000, maximumAge:0 }
-    );
+  return new Promise((res,rej)=>{
+    if(!('geolocation' in navigator)) return rej(new Error('Geolocation nicht unterstützt'));
+    navigator.geolocation.getCurrentPosition(res, e=>rej(new Error('Standort: '+e.message)),
+      { enableHighAccuracy:true, timeout:15000, maximumAge:0 });
   });
 }
 
-// Szene programmatisch einsetzen (vermeidet iOS-Initialisierungs-Bugs)
 function buildScene(){
   mount.innerHTML = `
-  <a-scene
-    embedded
-    vr-mode-ui="enabled:false"
-    renderer="antialias:true; alpha:true"
-    arjs="sourceType: webcam; videoTexture:true; debugUIEnabled:false; trackingMethod: best; facingMode: environment;">
-
-    <!-- Debug: roter Würfel 5m vor der Kamera -->
+  <a-scene embedded vr-mode-ui="enabled:false"
+           renderer="antialias:true; alpha:true"
+           arjs="sourceType: webcam; videoTexture:true; trackingMethod: best; facingMode: environment;">
+    <!-- Debug-Würfel 5 m vor dir -->
     <a-box color="tomato" depth="1" height="1" width="1" position="0 0 -5"></a-box>
 
-    <!-- Dein Bild an GPS-Position -->
-    <a-image
+    <!-- Geo-Bild am Ziel -->
+    <a-image id="artTarget"
       src="https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg"
       gps-entity-place="latitude: ${TARGET.lat}; longitude: ${TARGET.lon};"
       look-at="[gps-camera]"
-      scale="6 4.5 1"
-      rotation="0 0 0">
-    </a-image>
+      scale="6 4.5 1"></a-image>
 
     <a-camera gps-camera rotation-reader></a-camera>
   </a-scene>`;
+  sceneEl = document.querySelector('a-scene');
+}
 
-  // kleines Status-Update zur Genauigkeit
-  if ('geolocation' in navigator){
-    navigator.geolocation.watchPosition(
-      pos => { statusEl.textContent = `GPS aktiv (±${Math.round(pos.coords.accuracy)} m)`; },
-      err => { statusEl.textContent = 'Standort-Fehler: ' + err.message; },
-      { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
-    );
+// Distanz zum Ziel im Status anzeigen
+function watchDistance(){
+  if(!('geolocation' in navigator)) return;
+  const R=6371e3, toRad=d=>d*Math.PI/180;
+  const distM = (la1,lo1,la2,lo2)=>{
+    const dLa=toRad(la2-la1), dLo=toRad(lo2-lo1);
+    const a=Math.sin(dLa/2)**2+Math.cos(toRad(la1))*Math.cos(toRad(la2))*Math.sin(dLo/2)**2;
+    return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+  };
+  navigator.geolocation.watchPosition(
+    p => {
+      const d = distM(p.coords.latitude, p.coords.longitude, TARGET.lat, TARGET.lon);
+      statusEl.textContent = `GPS aktiv (±${Math.round(p.coords.accuracy)} m) · Entfernung zum Ziel: ${d.toFixed(1)} m`;
+    },
+    e => { statusEl.textContent = 'Standort-Fehler: '+e.message; },
+    { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
+  );
+}
+
+// „Hier testen“: Bild 5 m vor dir spawnen (ohne GPS)
+function spawnHere(){
+  if(!sceneEl){
+    statusEl.textContent = 'Erst „Los geht’s“ tippen (Kamera/Standort).';
+    return;
   }
+  if(localImgEl){ localImgEl.parentNode.removeChild(localImgEl); }
+  localImgEl = document.createElement('a-image');
+  localImgEl.setAttribute('src', 'https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg');
+  localImgEl.setAttribute('position', '0 0 -5');     // 5 m vor dir
+  localImgEl.setAttribute('scale',    '3 2.25 1');   // etwas kleiner
+  sceneEl.appendChild(localImgEl);
+  overlay.style.display = 'none';
+  statusEl.textContent = 'Testbild 5 m vor dir platziert.';
 }
 </script>
 </body>
