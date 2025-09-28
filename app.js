@@ -1,13 +1,10 @@
-// Konfiguration
-const API_URL = 'products.json'; // liegt im Repo-Root
+const API_URL = 'products.json';
 
-// Elemente
 const statusEl = document.getElementById('status');
 const gridEl = document.getElementById('grid');
 const skeletonsEl = document.getElementById('skeletons');
 const reloadBtn = document.getElementById('reloadBtn');
 
-// Modal
 const modal = document.getElementById('modal');
 const modalImg = document.getElementById('modalImg');
 const modalTitle = document.getElementById('modalTitle');
@@ -20,10 +17,9 @@ const openProduct = document.getElementById('openProduct');
 
 const fmtEUR = new Intl.NumberFormat('de-DE', { style:'currency', currency:'EUR' });
 
-// Lade Produkte
 async function loadProducts(){
   try{
-    showSkeletons(true);
+    setSkeleton(true);
     statusEl.textContent = 'Lade Werke…';
     gridEl.hidden = true;
 
@@ -32,29 +28,23 @@ async function loadProducts(){
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
-    const items = data.filter(p => p.available);
-    renderGrid(items);
-
+    renderGrid(data.filter(p => p.available));
     statusEl.textContent = '';
     gridEl.hidden = false;
   }catch(err){
     statusEl.textContent = `Fehler: ${err.message}`;
   }finally{
-    showSkeletons(false);
+    setSkeleton(false);
   }
 }
 
-function showSkeletons(on){
-  skeletonsEl.style.display = on ? 'grid' : 'none';
-}
+function setSkeleton(on){ skeletonsEl.style.display = on ? 'grid' : 'none'; }
 
-function renderGrid(products){
+function renderGrid(items){
   gridEl.innerHTML = '';
-  if(!products.length){
-    statusEl.textContent = 'Keine Werke gefunden.';
-    return;
-  }
-  for(const p of products){
+  if(!items.length){ statusEl.textContent = 'Keine Werke gefunden.'; return; }
+
+  for(const p of items){
     const card = document.createElement('article');
     card.className = 'card';
     card.innerHTML = `
@@ -63,75 +53,88 @@ function renderGrid(products){
         <h3 class="title">${escapeHtml(p.name)}</h3>
         <p class="price">${fmtEUR.format(p.price)}</p>
       </div>`;
-    card.addEventListener('click', ()=>openModal(p));
+    card.addEventListener('click', ()=> openModal(p));
     gridEl.appendChild(card);
   }
 }
 
+/* ========== Detail + Zoom, ohne Verzerren ========== */
+let z = 1, tx = 0, ty = 0; // scale & translation
 function openModal(p){
   modalTitle.textContent = p.name;
   modalPrice.textContent = fmtEUR.format(p.price);
   modalImg.src = p.image;
-  modalImg.style.transform = `translate(0px, 0px) scale(1)`;
-  zoomRange.value = 1; zoomVal.textContent = '1.0×';
-  openProduct.style.display = p.product_url ? 'inline-flex' : 'none';
+  openProduct.style.display = p.product_url ? 'inline-block' : 'none';
   if(p.product_url) openProduct.href = p.product_url;
+
+  // Reset View
+  z = 1; tx = 0; ty = 0;
+  applyTransform();
+  zoomRange.value = 1; zoomVal.textContent = '1.0×';
+
+  // Enable interactions
+  enablePanning(modalImg);
+  enableWheelZoom(modalImg);
+
   modal.showModal();
-
-  // Panning
-  let dragging = false, startX=0, startY=0, base = {x:0,y:0};
-  const start = e => {
-    dragging = true;
-    const pt = point(e);
-    startX = pt.x; startY = pt.y;
-    base = getTranslate(modalImg);
-  };
-  const move = e => {
-    if(!dragging) return;
-    const pt = point(e);
-    const dx = pt.x - startX, dy = pt.y - startY;
-    modalImg.style.transform = `translate(${base.x+dx}px, ${base.y+dy}px) scale(${zoomRange.value})`;
-  };
-  const stop = () => dragging = false;
-
-  modalImg.onmousedown = start;
-  modalImg.onmousemove = move;
-  document.onmouseup = stop;
-
-  modalImg.ontouchstart = e => { start(e.touches[0]); };
-  modalImg.ontouchmove  = e => { move(e.touches[0]); e.preventDefault(); };
-  modalImg.ontouchend   = stop;
 }
 
-zoomRange.addEventListener('input', e => {
-  const z = Number(e.target.value);
+function applyTransform(){
+  modalImg.style.transform = `translate(${tx}px, ${ty}px) scale(${z})`;
   zoomVal.textContent = `${z.toFixed(1)}×`;
-  const tr = getTranslate(modalImg);
-  modalImg.style.transform = `translate(${tr.x}px, ${tr.y}px) scale(${z})`;
+}
+
+zoomRange.addEventListener('input', e=>{
+  z = clamp(+e.target.value, 1, 6);
+  applyTransform();
 });
 
 resetZoomBtn.addEventListener('click', ()=>{
-  modalImg.style.transform = `translate(0px, 0px) scale(1)`;
-  zoomRange.value = 1; zoomVal.textContent = '1.0×';
+  z = 1; tx = 0; ty = 0; applyTransform();
 });
-
 closeModal.addEventListener('click', ()=> modal.close());
-reloadBtn.addEventListener('click', loadProducts);
 
-function getTranslate(el){
-  const m = getComputedStyle(el).transform;
-  if(m === 'none') return {x:0,y:0};
-  const parts = m.match(/matrix\(([^)]+)\)/);
-  if(!parts) return {x:0,y:0};
-  const v = parts[1].split(',').map(Number);
-  return { x: v[4]||0, y: v[5]||0 };
+/* Drag/Pan */
+function enablePanning(el){
+  let dragging = false, sx=0, sy=0, btx=0, bty=0;
+  const down = ev => {
+    dragging = true;
+    const p = point(ev); sx = p.x; sy = p.y; btx = tx; bty = ty;
+    ev.preventDefault();
+  };
+  const move = ev => {
+    if(!dragging) return;
+    const p = point(ev);
+    tx = btx + (p.x - sx);
+    ty = bty + (p.y - sy);
+    applyTransform();
+  };
+  const up = ()=> dragging = false;
+
+  el.onmousedown = down; el.onmousemove = move; document.onmouseup = up;
+  el.ontouchstart = e=>down(e.touches[0]);
+  el.ontouchmove  = e=>{ move(e.touches[0]); e.preventDefault(); };
+  el.ontouchend   = up;
 }
 
-function point(e){ return { x: e.clientX, y: e.clientY }; }
+/* Wheel-Zoom (am Maus-Rad, mittig zoomend) */
+function enableWheelZoom(el){
+  el.onwheel = e=>{
+    e.preventDefault();
+    const delta = Math.sign(e.deltaY);
+    const factor = 1 - delta * 0.1; // scroll up -> größer, down -> kleiner
+    const newZ = clamp(z * factor, 1, 6);
 
-function escapeHtml(s){
-  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    // Zoom mittig halten (einfacher Ansatz: ohne Ankerkorrektur)
+    z = newZ;
+    applyTransform();
+  };
 }
 
-// Start
+/* Helpers */
+function clamp(v,min,max){ return Math.max(min, Math.min(max,v)); }
+function point(e){ return {x:e.clientX, y:e.clientY}; }
+function escapeHtml(s){ return s.replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+document.getElementById('reloadBtn').addEventListener('click', loadProducts);
 loadProducts();
