@@ -8,8 +8,21 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="topbar">
-    <h1>Atelier – Galerie</h1>
+  <!-- Animated Background -->
+  <div class="bg">
+    <div class="blob b1"></div>
+    <div class="blob b2"></div>
+    <div class="blob b3"></div>
+    <div class="noise"></div>
+  </div>
+
+  <header class="topbar glass">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="currentColor" d="M12 2l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.8 6.2 20.9l1.1-6.5L2.6 8.8l6.5-.9L12 2z"/>
+      </svg>
+      <h1>Atelier – Galerie</h1>
+    </div>
     <button id="reloadBtn" class="btn">↻ Neu laden</button>
   </header>
 
@@ -18,10 +31,10 @@
 
     <!-- Skeletons -->
     <section id="skeletons" class="grid">
-      <article class="card skeleton"><div class="thumb"></div><div class="info"><div class="line"></div><div class="line short"></div></div></article>
-      <article class="card skeleton"><div class="thumb"></div><div class="info"><div class="line"></div><div class="line short"></div></div></article>
-      <article class="card skeleton"><div class="thumb"></div><div class="info"><div class="line"></div><div class="line short"></div></div></article>
-      <article class="card skeleton"><div class="thumb"></div><div class="info"><div class="line"></div><div class="line short"></div></div></article>
+      <article class="card glass skeleton"><div class="thumb"></div><div class="info"><div class="line"></div><div class="line short"></div></div></article>
+      <article class="card glass skeleton"><div class="thumb"></div><div class="info"><div class="line"></div><div class="line short"></div></div></article>
+      <article class="card glass skeleton"><div class="thumb"></div><div class="info"><div class="line"></div><div class="line short"></div></div></article>
+      <article class="card glass skeleton"><div class="thumb"></div><div class="info"><div class="line"></div><div class="line short"></div></div></article>
     </section>
 
     <!-- Produkt-Grid -->
@@ -29,12 +42,11 @@
   </main>
 
   <!-- Detail / Lightbox -->
-  <dialog id="modal">
-    <!-- Immer sichtbares X -->
+  <dialog id="modal" class="glass-strong">
     <button id="closeModal" class="close" aria-label="Schließen">×</button>
 
     <div class="modal-body">
-      <div class="canvas">
+      <div class="canvas glass">
         <img id="modalImg" alt="">
       </div>
 
@@ -50,13 +62,13 @@
 
         <div class="row">
           <button id="resetZoom" class="btn">Zurücksetzen</button>
-          <a id="openProduct" class="link" href="#" target="_blank" rel="noopener">Im Shop öffnen ↗</a>
+          <a id="openProduct" class="link btn-ghost" href="#" target="_blank" rel="noopener">Im Shop öffnen ↗</a>
         </div>
       </div>
     </div>
   </dialog>
 
-  <footer class="footer">
+  <footer class="footer glass">
     <small>© Atelier&nbsp;Schwarzenberger · Powered by GitHub Pages</small>
   </footer>
 
