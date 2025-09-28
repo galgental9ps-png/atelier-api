@@ -4,8 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Atelier – Galerie</title>
-  <link rel="stylesheet" href="styles.css" />
   <meta name="color-scheme" content="light dark">
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header class="topbar">
@@ -16,7 +16,7 @@
   <main>
     <div id="status" class="status">Lade Werke…</div>
 
-    <!-- Skeletons -->
+    <!-- Skeletons beim Laden -->
     <section id="skeletons" class="grid">
       <article class="card skeleton"><div class="thumb"></div><div class="info"><div class="line"></div><div class="line short"></div></div></article>
       <article class="card skeleton"><div class="thumb"></div><div class="info"><div class="line"></div><div class="line short"></div></div></article>
@@ -24,6 +24,7 @@
       <article class="card skeleton"><div class="thumb"></div><div class="info"><div class="line"></div><div class="line short"></div></div></article>
     </section>
 
+    <!-- Produkt-Grid -->
     <section id="grid" class="grid" hidden></section>
   </main>
 
@@ -49,6 +50,10 @@
       </div>
     </div>
   </dialog>
+
+  <footer class="footer">
+    <small>© Atelier&nbsp;Schwarzenberger · Powered by GitHub Pages</small>
+  </footer>
 
   <script src="app.js" defer></script>
 </body>
