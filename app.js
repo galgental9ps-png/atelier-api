@@ -1,3 +1,4 @@
+// JSON muss im Repo-Root liegen: products.json
 const API_URL = 'products.json';
 
 const statusEl = document.getElementById('status');
@@ -5,6 +6,7 @@ const gridEl = document.getElementById('grid');
 const skeletonsEl = document.getElementById('skeletons');
 const reloadBtn = document.getElementById('reloadBtn');
 
+// Modal-Refs
 const modal = document.getElementById('modal');
 const modalImg = document.getElementById('modalImg');
 const modalTitle = document.getElementById('modalTitle');
@@ -14,6 +16,7 @@ const zoomVal = document.getElementById('zoomVal');
 const resetZoomBtn = document.getElementById('resetZoom');
 const closeModal = document.getElementById('closeModal');
 const openProduct = document.getElementById('openProduct');
+const CANVAS = document.querySelector('.canvas');
 
 const fmtEUR = new Intl.NumberFormat('de-DE', { style:'currency', currency:'EUR' });
 
@@ -58,25 +61,49 @@ function renderGrid(items){
   }
 }
 
-/* ========== Detail + Zoom, ohne Verzerren ========== */
-let z = 1, tx = 0, ty = 0; // scale & translation
+/* ===== Detail + Zoom mit Auto-Fit ===== */
+let z = 1, tx = 0, ty = 0;          // scale & translation
+
 function openModal(p){
   modalTitle.textContent = p.name;
   modalPrice.textContent = fmtEUR.format(p.price);
   modalImg.src = p.image;
-  openProduct.style.display = p.product_url ? 'inline-block' : 'none';
-  if(p.product_url) openProduct.href = p.product_url;
 
-  // Reset View
+  openProduct.style.display = p.product_url ? 'inline-block' : 'none';
+  if (p.product_url) openProduct.href = p.product_url;
+
+  // Reset
   z = 1; tx = 0; ty = 0;
   applyTransform();
-  zoomRange.value = 1; zoomVal.textContent = '1.0×';
 
-  // Enable interactions
+  // Wenn Bild geladen -> Fit berechnen
+  modalImg.onload = () => { fitImageToCanvas(); };
+  if (modalImg.complete) fitImageToCanvas();
+
   enablePanning(modalImg);
   enableWheelZoom(modalImg);
 
   modal.showModal();
+}
+
+function fitImageToCanvas(){
+  const cw = CANVAS.clientWidth;
+  const ch = CANVAS.clientHeight;
+  const iw = modalImg.naturalWidth || modalImg.width;
+  const ih = modalImg.naturalHeight || modalImg.height;
+  if (!iw || !ih) return;
+
+  // Maßstab, damit das ganze Bild in die Canvas passt (CONTAIN)
+  const fit = Math.min(cw / iw, ch / ih);
+
+  z = fit; tx = 0; ty = 0;
+  applyTransform();
+
+  // Slider an Fit anpassen
+  zoomRange.min = (fit * 0.5).toFixed(2);
+  zoomRange.max = Math.max(6, fit * 4).toFixed(2);
+  zoomRange.value = fit.toFixed(2);
+  zoomVal.textContent = `${Number(zoomRange.value).toFixed(1)}×`;
 }
 
 function applyTransform(){
@@ -84,17 +111,17 @@ function applyTransform(){
   zoomVal.textContent = `${z.toFixed(1)}×`;
 }
 
+// Slider
 zoomRange.addEventListener('input', e=>{
-  z = clamp(+e.target.value, 1, 6);
+  z = clamp(+e.target.value, +zoomRange.min, +zoomRange.max);
   applyTransform();
 });
 
-resetZoomBtn.addEventListener('click', ()=>{
-  z = 1; tx = 0; ty = 0; applyTransform();
-});
+// Reset
+resetZoomBtn.addEventListener('click', ()=>{ fitImageToCanvas(); });
 closeModal.addEventListener('click', ()=> modal.close());
 
-/* Drag/Pan */
+/* Drag/Pan – iPhone freundlich */
 function enablePanning(el){
   let dragging = false, sx=0, sy=0, btx=0, bty=0;
   const down = ev => {
@@ -103,29 +130,28 @@ function enablePanning(el){
     ev.preventDefault();
   };
   const move = ev => {
-    if(!dragging) return;
+    if (!dragging) return;
     const p = point(ev);
     tx = btx + (p.x - sx);
     ty = bty + (p.y - sy);
     applyTransform();
+    ev.preventDefault();
   };
-  const up = ()=> dragging = false;
+  const up = () => { dragging = false; };
 
   el.onmousedown = down; el.onmousemove = move; document.onmouseup = up;
-  el.ontouchstart = e=>down(e.touches[0]);
-  el.ontouchmove  = e=>{ move(e.touches[0]); e.preventDefault(); };
+  el.ontouchstart = e => down(e.touches[0]);
+  el.ontouchmove  = e => { move(e.touches[0]); };
   el.ontouchend   = up;
 }
 
-/* Wheel-Zoom (am Maus-Rad, mittig zoomend) */
+/* Wheel-Zoom (Desktop) */
 function enableWheelZoom(el){
   el.onwheel = e=>{
     e.preventDefault();
     const delta = Math.sign(e.deltaY);
-    const factor = 1 - delta * 0.1; // scroll up -> größer, down -> kleiner
-    const newZ = clamp(z * factor, 1, 6);
-
-    // Zoom mittig halten (einfacher Ansatz: ohne Ankerkorrektur)
+    const factor = 1 - delta * 0.12;
+    const newZ = clamp(z * factor, +zoomRange.min, +zoomRange.max);
     z = newZ;
     applyTransform();
   };
@@ -133,7 +159,7 @@ function enableWheelZoom(el){
 
 /* Helpers */
 function clamp(v,min,max){ return Math.max(min, Math.min(max,v)); }
-function point(e){ return {x:e.clientX, y:e.clientY}; }
+function point(e){ return { x:e.clientX, y:e.clientY }; }
 function escapeHtml(s){ return s.replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
 
 document.getElementById('reloadBtn').addEventListener('click', loadProducts);
