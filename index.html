@@ -10,7 +10,7 @@
 <body>
   <header class="topbar">
     <h1>Atelier – Galerie</h1>
-    <button id="reloadBtn">↻ Neu laden</button>
+    <button id="reloadBtn" class="btn">↻ Neu laden</button>
   </header>
 
   <main>
@@ -24,17 +24,20 @@
       <article class="card skeleton"><div class="thumb"></div><div class="info"><div class="line"></div><div class="line short"></div></div></article>
     </section>
 
-    <!-- Grid -->
+    <!-- Produkt-Grid -->
     <section id="grid" class="grid" hidden></section>
   </main>
 
   <!-- Detail / Lightbox -->
   <dialog id="modal">
-    <button id="closeModal" class="icon-btn" aria-label="Schließen">✕</button>
+    <!-- Immer sichtbares X -->
+    <button id="closeModal" class="close" aria-label="Schließen">×</button>
+
     <div class="modal-body">
       <div class="canvas">
         <img id="modalImg" alt="">
       </div>
+
       <div class="meta">
         <h2 id="modalTitle"></h2>
         <p id="modalPrice" class="price"></p>
@@ -46,7 +49,7 @@
         </label>
 
         <div class="row">
-          <button id="resetZoom">Zurücksetzen</button>
+          <button id="resetZoom" class="btn">Zurücksetzen</button>
           <a id="openProduct" class="link" href="#" target="_blank" rel="noopener">Im Shop öffnen ↗</a>
         </div>
       </div>
@@ -54,7 +57,7 @@
   </dialog>
 
   <footer class="footer">
-    <small>© Atelier&nbsp;Schwarzenberger</small>
+    <small>© Atelier&nbsp;Schwarzenberger · Powered by GitHub Pages</small>
   </footer>
 
   <script src="app.js" defer></script>
