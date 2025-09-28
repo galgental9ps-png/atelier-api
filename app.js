@@ -73,16 +73,16 @@ function openModal(p){
   openProduct.style.display = p.product_url ? 'inline-block' : 'none';
   if (p.product_url) openProduct.href = p.product_url;
 
-  // zurücksetzen
+  // Reset
   z = 1; tx = 0; ty = 0; userChangedZoom = false;
   modalImg.style.transform = 'translate(0px, 0px) scale(1)';
 
-  // Sichtbar machen, dann Bild setzen -> damit Canvas-Maße stimmen
+  // Erst sichtbar machen, dann Bild setzen (damit Canvas-Maße stimmen)
   modal.showModal();
   modalImg.onload = () => requestAnimationFrame(fitImageToCanvas);
   modalImg.src = p.image;
 
-  // Falls Cache: dennoch fitten
+  // Falls Bild aus Cache: trotzdem fitten
   if (modalImg.complete && modalImg.naturalWidth) {
     requestAnimationFrame(fitImageToCanvas);
   }
@@ -105,14 +105,14 @@ function fitImageToCanvas(){
   const ih = modalImg.naturalHeight;
   if (!iw || !ih) return;
 
-  // Komplett darstellen: contain, mit Luft. Nie > 1 starten.
+  // Komplett darstellen (contain) + kleiner Rand, nie > 1 starten
   const contain = Math.min(cw/iw, ch/ih);
-  const startZ  = Math.min(1, contain) * 0.95; // 95% der Fläche
+  const startZ  = Math.min(1, contain) * 0.95;
 
   z = startZ; tx = 0; ty = 0;
   applyTransform();
 
-  // Slider passend einstellen (moderat)
+  // Slider passend einstellen
   zoomRange.min   = Math.max(0.1, startZ * 0.5).toFixed(2);
   zoomRange.max   = Math.max(2.0, startZ * 3.0).toFixed(2);
   zoomRange.value = startZ.toFixed(2);
@@ -180,5 +180,5 @@ function clamp(v,min,max){ return Math.max(min, Math.min(max,v)); }
 function point(e){ return { x:e.clientX, y:e.clientY }; }
 function escapeHtml(s){ return s.replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
 
-reloadBtn.addEventListener('click', loadProducts);
+document.getElementById('reloadBtn').addEventListener('click', loadProducts);
 loadProducts();
