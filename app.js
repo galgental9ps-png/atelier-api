@@ -77,12 +77,12 @@ function openModal(p){
   z = 1; tx = 0; ty = 0; userChangedZoom = false;
   modalImg.style.transform = 'translate(0px, 0px) scale(1)';
 
-  // Bild setzen & Auto-Fit ausführen, nachdem es sichtbar ist
+  // Sichtbar machen, dann Bild setzen -> damit Canvas-Maße stimmen
+  modal.showModal();
   modalImg.onload = () => requestAnimationFrame(fitImageToCanvas);
-  modal.showModal();           // zuerst sichtbar machen, damit Maße stimmen
-  modalImg.src = p.image;      // dann Quelle setzen
+  modalImg.src = p.image;
 
-  // Falls aus Cache (onload evtl. nicht gefeuert)
+  // Falls Cache: dennoch fitten
   if (modalImg.complete && modalImg.naturalWidth) {
     requestAnimationFrame(fitImageToCanvas);
   }
@@ -90,7 +90,7 @@ function openModal(p){
   enablePanning(modalImg);
   enableWheelZoom(modalImg);
 
-  // Re-Fit bei Größenänderung (Rotation/Resize) – aber nur solange der Nutzer noch nicht gezoomt hat
+  // Re-Fit bei Canvas-Resize (Rotation etc.), solange Nutzer nicht gezoomt hat
   if (ro) ro.disconnect();
   ro = new ResizeObserver(()=>{ if(!userChangedZoom) fitImageToCanvas(); });
   ro.observe(CANVAS);
@@ -105,14 +105,14 @@ function fitImageToCanvas(){
   const ih = modalImg.naturalHeight;
   if (!iw || !ih) return;
 
-  // Komplett darstellen: "contain" – NICHT größer als 1, mit etwas Luft (0.95)
+  // Komplett darstellen: contain, mit Luft. Nie > 1 starten.
   const contain = Math.min(cw/iw, ch/ih);
-  const startZ  = Math.min(1, contain) * 0.95;
+  const startZ  = Math.min(1, contain) * 0.95; // 95% der Fläche
 
   z = startZ; tx = 0; ty = 0;
   applyTransform();
 
-  // Slider passend einstellen
+  // Slider passend einstellen (moderat)
   zoomRange.min   = Math.max(0.1, startZ * 0.5).toFixed(2);
   zoomRange.max   = Math.max(2.0, startZ * 3.0).toFixed(2);
   zoomRange.value = startZ.toFixed(2);
