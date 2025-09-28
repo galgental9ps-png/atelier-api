@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Atelier – Shop</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Atelier – Shop</h1>
+    <button id="reloadBtn" aria-label="Neu laden">↻</button>
+  </header>
+
+  <main>
+    <div id="status" class="status">Lade Produkte…</div>
+    <section id="grid" class="grid" hidden></section>
+  </main>
+
+  <!-- Modal / Lightbox -->
+  <dialog id="modal">
+    <button id="closeModal" class="close" aria-label="Schließen">×</button>
+    <div class="modal-body">
+      <div class="zoom-wrap">
+        <img id="modalImg" alt="" />
+      </div>
+      <div class="meta">
+        <h2 id="modalTitle"></h2>
+        <p id="modalPrice" class="price"></p>
+        <label class="zoomctl">
+          Zoom
+          <input id="zoomRange" type="range" min="0.5" max="6" step="0.1" value="1">
+          <span id="zoomVal">1.0×</span>
+        </label>
+        <button id="resetZoom">Zurücksetzen</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
