@@ -3,23 +3,48 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Atelier – Shop</title>
+  <title>Atelier – Galerie</title>
   <link rel="stylesheet" href="styles.css" />
+  <meta name="color-scheme" content="light dark">
 </head>
 <body>
-  <header class="topbar">
-    <h1>Atelier – Shop</h1>
-    <button id="reloadBtn" aria-label="Neu laden">↻</button>
+  <div class="bg"></div>
+
+  <header class="topbar glass">
+    <div class="brand">
+      <div class="logo">🎨</div>
+      <h1>Atelier – Galerie</h1>
+    </div>
+    <nav class="actions">
+      <button id="reloadBtn" class="btn ghost" aria-label="Neu laden">↻ Neu laden</button>
+    </nav>
   </header>
 
   <main>
-    <div id="status" class="status">Lade Produkte…</div>
+    <div id="status" class="status">Lade Werke…</div>
+
+    <!-- Skeletons (werden via JS versteckt) -->
+    <section id="skeletons" class="grid">
+      <article class="card skeleton">
+        <div class="thumb"></div><div class="info"><div class="line"></div><div class="line short"></div></div>
+      </article>
+      <article class="card skeleton">
+        <div class="thumb"></div><div class="info"><div class="line"></div><div class="line short"></div></div>
+      </article>
+      <article class="card skeleton">
+        <div class="thumb"></div><div class="info"><div class="line"></div><div class="line short"></div></div>
+      </article>
+      <article class="card skeleton">
+        <div class="thumb"></div><div class="info"><div class="line"></div><div class="line short"></div></div>
+      </article>
+    </section>
+
     <section id="grid" class="grid" hidden></section>
   </main>
 
-  <!-- Modal / Lightbox -->
-  <dialog id="modal">
-    <button id="closeModal" class="close" aria-label="Schließen">×</button>
+  <!-- Lightbox / Modal -->
+  <dialog id="modal" class="glass">
+    <button id="closeModal" class="icon-btn" aria-label="Schließen">✕</button>
     <div class="modal-body">
       <div class="zoom-wrap">
         <img id="modalImg" alt="" />
@@ -28,14 +53,21 @@
         <h2 id="modalTitle"></h2>
         <p id="modalPrice" class="price"></p>
         <label class="zoomctl">
-          Zoom
+          <span>Zoom</span>
           <input id="zoomRange" type="range" min="0.5" max="6" step="0.1" value="1">
-          <span id="zoomVal">1.0×</span>
+          <span id="zoomVal" class="mono">1.0×</span>
         </label>
-        <button id="resetZoom">Zurücksetzen</button>
+        <div class="row">
+          <button id="resetZoom" class="btn">Zurücksetzen</button>
+          <a id="openProduct" class="btn ghost" href="#" target="_blank" rel="noopener">Im Shop öffnen ↗</a>
+        </div>
       </div>
     </div>
   </dialog>
+
+  <footer class="footer glass">
+    <small>© Atelier&nbsp;Schwarzenberger · Powered by GitHub Pages</small>
+  </footer>
 
   <script src="app.js" defer></script>
 </body>
