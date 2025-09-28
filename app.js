@@ -1,114 +1,184 @@
-:root{
-  --gap:16px;
-  /* Kachelformat: 4:3 -> 75%. Für 1:1 = 100%, 16:9 = 56.25% */
-  --ratio-pct: 75%;
-  --thumb-bg:#f1f2f5;
-  --text:#0e0f12; --muted:#666;
-  --surface: rgba(255,255,255,.75);
-  --border: rgba(0,0,0,.08);
-  --shadow: 0 10px 26px rgba(0,0,0,.08);
-}
-@media (prefers-color-scheme: dark){
-  :root{
-    --thumb-bg:#1d2230; --text:#e9ebf1; --muted:#a2a7b7;
-    --surface: rgba(25,28,36,.7); --border: rgba(255,255,255,.08);
-    --shadow: 0 14px 28px rgba(0,0,0,.45);
+// JSON im Repo-Root: products.json
+const API_URL = 'products.json';
+
+const statusEl = document.getElementById('status');
+const gridEl = document.getElementById('grid');
+const skeletonsEl = document.getElementById('skeletons');
+const reloadBtn = document.getElementById('reloadBtn');
+
+// Modal
+const modal = document.getElementById('modal');
+const modalImg = document.getElementById('modalImg');
+const modalTitle = document.getElementById('modalTitle');
+const modalPrice = document.getElementById('modalPrice');
+const zoomRange = document.getElementById('zoomRange');
+const zoomVal = document.getElementById('zoomVal');
+const resetZoomBtn = document.getElementById('resetZoom');
+const closeModal = document.getElementById('closeModal');
+const openProduct = document.getElementById('openProduct');
+const CANVAS = document.querySelector('.canvas');
+
+const fmtEUR = new Intl.NumberFormat('de-DE', { style:'currency', currency:'EUR' });
+
+// ----------------------------------------------------
+
+async function loadProducts(){
+  try{
+    setSkeleton(true);
+    statusEl.textContent = 'Lade Werke…';
+    gridEl.hidden = true;
+
+    const res = await fetch(`${API_URL}?v=${Date.now()}`, { cache:'no-store' });
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    renderGrid(data.filter(p => p.available));
+    statusEl.textContent = '';
+    gridEl.hidden = false;
+  }catch(err){
+    statusEl.textContent = `Fehler: ${err.message}`;
+  }finally{
+    setSkeleton(false);
   }
 }
 
-*{box-sizing:border-box}
-body{margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,sans-serif; color:var(--text); background:#fafafa;}
-@media (prefers-color-scheme: dark){ body{ background:#0f1116; } }
+function setSkeleton(on){ skeletonsEl.style.display = on ? 'grid' : 'none'; }
 
-.topbar{
-  position:sticky; top:0; z-index:10; display:flex; align-items:center; justify-content:space-between;
-  padding:12px 16px; background:rgba(255,255,255,.9); border-bottom:1px solid #e7e8ee; backdrop-filter: blur(10px);
-}
-@media (prefers-color-scheme: dark){ .topbar{ background:rgba(16,18,24,.7); border-bottom-color:#222633; } }
-.topbar h1{font-size:18px; margin:0}
-.btn{padding:8px 12px; border-radius:8px; border:1px solid #d8dbe6; background:#fff; cursor:pointer}
-@media (prefers-color-scheme: dark){ .btn{ border-color:#30364a; background:#1a1e29; color:#e9ebf1 } }
+function renderGrid(items){
+  gridEl.innerHTML = '';
+  if(!items.length){ statusEl.textContent = 'Keine Werke gefunden.'; return; }
 
-.status{ text-align:center; color:var(--muted); padding:18px }
-main{ max-width:1200px; margin:0 auto; padding: 8px 16px 64px }
-
-.grid{
-  display:grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: var(--gap);
+  for(const p of items){
+    const card = document.createElement('article');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="thumb"><img src="${p.image}" alt="${escapeHtml(p.name)}" loading="lazy"></div>
+      <div class="info">
+        <h3 class="title">${escapeHtml(p.name)}</h3>
+        <p class="price">${fmtEUR.format(p.price)}</p>
+      </div>`;
+    card.addEventListener('click', ()=> openModal(p));
+    gridEl.appendChild(card);
+  }
 }
 
-/* Karten – iPhone-sicher gleiche Höhe via Padding-Ratio, Bilder unverzerrt */
-.card{
-  border:1px solid var(--border); border-radius:14px; overflow:hidden; background:var(--surface);
-  box-shadow: var(--shadow); transition: transform .12s ease;
-}
-.card:hover{ transform: translateY(-2px) }
+// ===== Detail + garantiertes Auto-Fit beim Öffnen =====
+let z = 1, tx = 0, ty = 0;   // Zoom & Translation
+let userChangedZoom = false;
+let ro; // ResizeObserver
 
-.thumb{ position:relative; background:var(--thumb-bg); }
-.thumb::before{ content:""; display:block; padding-top: var(--ratio-pct); } /* Ratio-Box */
-.thumb img{
-  position:absolute; inset:8px;
-  width: calc(100% - 16px);
-  height: calc(100% - 16px);
-  object-fit: contain; object-position:center;
-  display:block; -webkit-user-drag:none; user-select:none; -webkit-user-select:none;
-}
+function openModal(p){
+  modalTitle.textContent = p.name;
+  modalPrice.textContent = fmtEUR.format(p.price);
+  openProduct.style.display = p.product_url ? 'inline-block' : 'none';
+  if (p.product_url) openProduct.href = p.product_url;
 
-.info{ padding:12px 14px 14px }
-.title{ font-weight:700; margin:2px 0 6px; line-height:1.2 }
-.price{ margin:0; font-weight:700 }
+  // Reset
+  z = 1; tx = 0; ty = 0; userChangedZoom = false;
+  modalImg.style.transform = 'translate(0px, 0px) scale(1)';
 
-.footer{
-  position:fixed; left:0; right:0; bottom:0; padding:10px 14px; text-align:center; color:var(--muted);
-  background: linear-gradient(to top, rgba(255,255,255,.85), transparent);
-}
-@media (prefers-color-scheme: dark){ .footer{ background: linear-gradient(to top, rgba(16,18,24,.7), transparent); } }
+  // Erst sichtbar machen, dann Bild setzen (damit Canvas-Maße stimmen)
+  modal.showModal();
+  modalImg.onload = () => requestAnimationFrame(fitImageToCanvas);
+  modalImg.src = p.image;
 
-/* Modal */
-dialog{ border:none; border-radius:16px; width:min(1100px, 96vw); padding:0; }
-dialog::backdrop{ background: rgba(0,0,0,.5); }
-.modal-body{ display:grid; grid-template-columns: 1fr 320px; gap:16px; padding:16px; }
-@media (max-width:820px){ .modal-body{ grid-template-columns:1fr; } }
+  // Falls Bild aus Cache: trotzdem fitten
+  if (modalImg.complete && modalImg.naturalWidth) {
+    requestAnimationFrame(fitImageToCanvas);
+  }
 
-.canvas{
-  width:100%; height:min(80vh, 70dvh);
-  background: var(--thumb-bg);
-  border-radius:12px; overflow:hidden; position:relative;
-  display:flex; align-items:center; justify-content:center;
+  enablePanning(modalImg);
+  enableWheelZoom(modalImg);
+
+  // Re-Fit bei Canvas-Resize (Rotation etc.), solange Nutzer nicht gezoomt hat
+  if (ro) ro.disconnect();
+  ro = new ResizeObserver(()=>{ if(!userChangedZoom) fitImageToCanvas(); });
+  ro.observe(CANVAS);
 }
 
-/* Bild soll nie das X überdecken & sauber zoomen */
-.canvas, #modalImg{ touch-action:none; -webkit-user-select:none; user-select:none; }
-#modalImg{
-  will-change: transform; transform-origin:center center;
-  max-width:none; max-height:none; /* wir steuern per transform */
+function fitImageToCanvas(){
+  const padding = 16; // kleiner Rand
+  const cw = Math.max(10, CANVAS.clientWidth  - padding);
+  const ch = Math.max(10, CANVAS.clientHeight - padding);
+
+  const iw = modalImg.naturalWidth;
+  const ih = modalImg.naturalHeight;
+  if (!iw || !ih) return;
+
+  // Komplett darstellen (contain) + kleiner Rand, nie > 1 starten
+  const contain = Math.min(cw/iw, ch/ih);
+  const startZ  = Math.min(1, contain) * 0.95;
+
+  z = startZ; tx = 0; ty = 0;
+  applyTransform();
+
+  // Slider passend einstellen
+  zoomRange.min   = Math.max(0.1, startZ * 0.5).toFixed(2);
+  zoomRange.max   = Math.max(2.0, startZ * 3.0).toFixed(2);
+  zoomRange.value = startZ.toFixed(2);
+  zoomVal.textContent = `${startZ.toFixed(1)}×`;
 }
 
-/* Close-X – immer anklickbar */
-#closeModal.close{
-  position:absolute; top:10px; right:10px;
-  z-index: 9999;
-  width:40px; height:40px; border-radius:12px;
-  border:1px solid var(--border);
-  background: rgba(0,0,0,.55);
-  color:#fff; font-size:22px; line-height:1;
-  display:flex; align-items:center; justify-content:center; cursor:pointer;
+function applyTransform(){
+  modalImg.style.transform = `translate(${tx}px, ${ty}px) scale(${z})`;
+  zoomVal.textContent = `${z.toFixed(1)}×`;
 }
-#closeModal.close:hover{ background: rgba(0,0,0,.8); }
 
-.meta{ display:flex; flex-direction:column; gap:12px }
-.zoomctl{ display:flex; align-items:center; gap:10px }
-.link{ text-decoration:none; border:1px solid var(--border); padding:8px 12px; border-radius:8px; }
+zoomRange.addEventListener('input', e=>{
+  userChangedZoom = true;
+  z = clamp(+e.target.value, +zoomRange.min, +zoomRange.max);
+  applyTransform();
+});
 
-/* Skeletons */
-.skeleton .thumb{ position:relative; overflow:hidden }
-.skeleton .thumb::after, .skeleton .line::after{
-  content:""; position:absolute; inset:0; background:linear-gradient(90deg, transparent, #fff6, transparent);
-  animation: shimmer 1.1s infinite;
+resetZoomBtn.addEventListener('click', ()=>{
+  userChangedZoom = false;
+  fitImageToCanvas();
+});
+
+closeModal.addEventListener('click', ()=>{
+  if (ro) ro.disconnect();
+  modal.close();
+});
+
+/* Drag/Pan – iPhone-freundlich */
+function enablePanning(el){
+  let dragging = false, sx=0, sy=0, btx=0, bty=0;
+  const down = ev => {
+    dragging = true; userChangedZoom = true;
+    const p = point(ev); sx = p.x; sy = p.y; btx = tx; bty = ty;
+    ev.preventDefault();
+  };
+  const move = ev => {
+    if (!dragging) return;
+    const p = point(ev);
+    tx = btx + (p.x - sx);
+    ty = bty + (p.y - sy);
+    applyTransform();
+    ev.preventDefault();
+  };
+  const up = () => { dragging = false; };
+
+  el.onmousedown = down; el.onmousemove = move; document.onmouseup = up;
+  el.ontouchstart = e => down(e.touches[0]);
+  el.ontouchmove  = e => { move(e.touches[0]); };
+  el.ontouchend   = up;
 }
-.skeleton .info{ position:relative }
-.skeleton .line{ height:14px; background:#e3e6f0; border-radius:6px; margin:10px 14px }
-.skeleton .line.short{ width:40% }
-@media (prefers-color-scheme: dark){ .skeleton .line{ background:#30364a } }
-@keyframes shimmer{ from{transform:translateX(-100%)} to{transform:translateX(100%)} }
+
+/* Wheel-Zoom (Desktop) */
+function enableWheelZoom(el){
+  el.onwheel = e=>{
+    e.preventDefault(); userChangedZoom = true;
+    const delta = Math.sign(e.deltaY);
+    const factor = 1 - delta * 0.12;
+    z = clamp(z * factor, +zoomRange.min, +zoomRange.max);
+    applyTransform();
+  };
+}
+
+/* Helpers */
+function clamp(v,min,max){ return Math.max(min, Math.min(max,v)); }
+function point(e){ return { x:e.clientX, y:e.clientY }; }
+function escapeHtml(s){ return s.replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+document.getElementById('reloadBtn').addEventListener('click', loadProducts);
+loadProducts();
