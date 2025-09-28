@@ -50,7 +50,7 @@ function renderGrid(items){
 
   for(const p of items){
     const card = document.createElement('article');
-    card.className = 'card';
+    card.className = 'card glass';
     card.innerHTML = `
       <div class="thumb"><img src="${p.image}" alt="${escapeHtml(p.name)}" loading="lazy"></div>
       <div class="info">
@@ -77,12 +77,12 @@ function openModal(p){
   z = 1; tx = 0; ty = 0; userChangedZoom = false;
   modalImg.style.transform = 'translate(0px, 0px) scale(1)';
 
-  // Erst sichtbar machen, dann Bild setzen (damit Canvas-Maße stimmen)
+  // Sichtbar machen, dann Bild setzen (damit Canvas-Maße stimmen)
   modal.showModal();
   modalImg.onload = () => requestAnimationFrame(fitImageToCanvas);
   modalImg.src = p.image;
 
-  // Falls Bild aus Cache: trotzdem fitten
+  // Falls Cache: dennoch fitten
   if (modalImg.complete && modalImg.naturalWidth) {
     requestAnimationFrame(fitImageToCanvas);
   }
