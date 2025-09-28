@@ -1,0 +1,63 @@
+:root { --gap:16px; --card-h:220px; }
+* { box-sizing:border-box; }
+body { margin:0; font-family:system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:#fafafa; color:#111; }
+
+.topbar { position:sticky; top:0; display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#fff; border-bottom:1px solid #eee; }
+.topbar h1 { font-size:20px; margin:0; }
+.topbar button { font-size:18px; padding:6px 10px; }
+
+.status { padding:24px; text-align:center; color:#666; }
+
+.grid {
+  display:grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--gap);
+  padding: 16px;
+}
+
+.card {
+  background: rgba(255,255,255,0.7);
+  backdrop-filter: blur(6px);
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.08);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform .08s ease;
+}
+.card:active { transform: scale(0.98); }
+
+.thumb {
+  height: var(--card-h);
+  display:flex; align-items:center; justify-content:center;
+  background:#f0f0f0;
+}
+.thumb img {
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain; /* NICHT zuschneiden, Original-Proportionen */
+  display:block;
+}
+.info { padding:12px; }
+.title { font-weight:600; margin:0 0 6px; line-height:1.2; }
+.price { margin:0; font-weight:700; }
+
+/* Modal / Lightbox */
+dialog#modal { width:min(1100px, 96vw); border:none; border-radius:14px; padding:0; }
+dialog::backdrop { background: rgba(0,0,0,.45); }
+.modal-body { display:grid; grid-template-columns: 1fr 320px; gap:16px; padding:16px; }
+@media (max-width: 760px) { .modal-body { grid-template-columns: 1fr; } }
+
+.zoom-wrap {
+  width:100%; height:min(80vh, 70dvh);
+  background:#f0f0f0; display:flex; align-items:center; justify-content:center;
+  overflow:hidden; border-radius:12px; position:relative;
+}
+#modalImg { max-width:none; max-height:none; transform-origin:center; }
+
+.meta { display:flex; flex-direction:column; gap:12px; }
+.zoomctl { display:flex; align-items:center; gap:10px; }
+#closeModal {
+  position:absolute; top:8px; right:10px; border:none; background:#fff; width:36px; height:36px; border-radius:10px; font-size:20px;
+  box-shadow:0 2px 8px rgba(0,0,0,.2); cursor:pointer;
+}
+#resetZoom { align-self:flex-start; }
