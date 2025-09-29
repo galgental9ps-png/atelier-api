@@ -3,196 +3,146 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>AR Diagnose: 2D → AR Platte → AR Bild</title>
+<title>Camera BG + A-Frame Overlay (sicher sichtbar)</title>
 
-<!-- A-Frame + AR.js -->
+<!-- Nur A-Frame (kein AR.js) -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
 
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,Segoe UI,Inter,Roboto,sans-serif}
-  #ui{position:fixed;inset:auto 0 0 0;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;padding:10px;background:linear-gradient(180deg,transparent,rgba(0,0,0,.6));z-index:20}
-  .btn{padding:10px 12px;border:0;border-radius:10px;font-weight:800;color:#fff;background:#0ea5e9;cursor:pointer}
-  #status{position:fixed;left:50%;bottom:64px;transform:translateX(-50%);background:#000d;padding:8px 12px;border-radius:10px;z-index:20;font-weight:700;max-width:92vw;text-align:center}
-  #overlayImg{position:fixed;inset:auto 16px 92px 16px;display:none;justify-content:center;z-index:15}
-  #overlayImg img{max-width:90vw;max-height:40vh;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.45)}
+  #camwrap{position:fixed;inset:0;z-index:0;background:#000}
+  #camfeed{position:absolute;inset:0;margin:auto;min-width:100%;min-height:100%;object-fit:cover;transform:scaleX(-1)} /* optional Spiegelung */
+  #scenewrap{position:fixed;inset:0;z-index:1;pointer-events:none}
+  #ui{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:2;background:#000c;padding:10px 14px;border-radius:12px;font-weight:700}
+  .btn{padding:8px 12px;border:0;border-radius:10px;background:#0ea5e9;color:#fff;font-weight:800;cursor:pointer}
 </style>
 </head>
 <body>
 
-<div id="status">Bereit…</div>
-
-<div id="ui">
-  <button id="start" class="btn">Kamera starten</button>
-  <button id="test1" class="btn" disabled>Test 1: 2D-Bild (Overlay)</button>
-  <button id="test2" class="btn" disabled>Test 2: AR-Platte (ohne Bild)</button>
-  <button id="test3" class="btn" disabled>Test 3: AR-Bild (mit Fallback)</button>
+<!-- Kamera-Hintergrund -->
+<div id="camwrap">
+  <video id="camfeed" autoplay playsinline muted></video>
 </div>
 
-<!-- 2D-Overlay-Test -->
-<div id="overlayImg"><img id="plainImg" alt="Overlay" /></div>
+<!-- UI -->
+<div id="ui">
+  <button id="start" class="btn">Start</button>
+  <span id="status" style="margin-left:10px;opacity:.9">Bereit…</span>
+</div>
 
-<!-- AR Mount -->
-<div id="mount"></div>
+<!-- A-Frame Overlay (transparent) -->
+<div id="scenewrap">
+  <a-scene id="scene"
+    embedded
+    renderer="alpha:true; antialias:true; physicallyCorrectLights:false"
+    vr-mode-ui="enabled:false">
+    <a-assets timeout="15000" crossorigin="anonymous">
+      <!-- Dein Bild + Fallback werden vorgeladen -->
+      <img id="imgPrimary"  src="https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg?v=1" crossorigin="anonymous">
+      <img id="imgFallback" src="https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg" crossorigin="anonymous">
+    </a-assets>
+
+    <a-entity id="rig">
+      <a-camera id="cam" position="0 1.6 0" wasd-controls-enabled="false" look-controls="touchEnabled:true"></a-camera>
+    </a-entity>
+
+    <!-- Hier kommt das Bild-Panel rein -->
+    <a-entity id="panelHolder"></a-entity>
+  </a-scene>
+</div>
 
 <script>
-/*** KONFIG ***/
-const IMG_PRIMARY  = "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg"; // dein JPG
-const IMG_FALLBACK = "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg"; // zuverlässiges Fallback
-const SIZE = { w: 1.6, h: 1.2 }; // Meter
-const DIST = 1.2; // Meter vor der Kamera
-
-/*** UI ***/
-const S = (m)=>{ statusEl.textContent = m; console.log(m); };
-const startBtn = document.getElementById('start');
-const test1Btn = document.getElementById('test1');
-const test2Btn = document.getElementById('test2');
-const test3Btn = document.getElementById('test3');
 const statusEl = document.getElementById('status');
-const overlayDiv = document.getElementById('overlayImg');
-const overlayImg = document.getElementById('plainImg');
-const mount = document.getElementById('mount');
+const startBtn = document.getElementById('start');
+const videoEl  = document.getElementById('camfeed');
+const scene    = document.getElementById('scene');
+const panelHolder = document.getElementById('panelHolder');
 
-/*** State ***/
-let sceneEl, camEl;
+// Einstellungen
+const DIST_M = 1.2;                // Abstand vor der Kamera
+const SIZE_M = { w: 1.6, h: 1.2 }; // Größe des Bildes
 
-/*** Start Kamera/AR Umgebung ***/
 startBtn.addEventListener('click', async ()=>{
   try{
-    await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
-    // iOS Bewegungssensoren (best effort)
+    // 1) Kamera-Stream starten (Hintergrund-Video)
+    const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' }, audio:false });
+    videoEl.srcObject = stream;
+
+    // 2) iOS Bewegung fragen (schadet nicht, ist aber optional)
     try{
       if (typeof DeviceMotionEvent?.requestPermission === 'function') await DeviceMotionEvent.requestPermission().catch(()=>{});
       if (typeof DeviceOrientationEvent?.requestPermission === 'function') await DeviceOrientationEvent.requestPermission().catch(()=>{});
     }catch{}
-    ensureScene();
-    await sceneLoaded();
-    startBtn.disabled = true;
-    test1Btn.disabled = false;
-    test2Btn.disabled = false;
-    test3Btn.disabled = false;
-    S("Kamera aktiv. Wähle einen Test.");
+
+    // 3) A-Frame: warten bis geladen, dann Panel bauen
+    await new Promise(res => scene.hasLoaded ? res() : scene.addEventListener('loaded', res, {once:true}));
+    await buildPanel();
+
+    statusEl.textContent = 'Aktiv – Bild steht vor dir.';
+    startBtn.style.display = 'none';
   }catch(e){
-    S("Kamera konnte nicht gestartet werden: "+(e?.message||e));
+    statusEl.textContent = 'Fehler: '+(e?.message||e);
+    console.error(e);
   }
 });
 
-/*** Test 1: 2D Overlay – zeigt, ob das Bild/URL/CORS ok ist ***/
-test1Btn.addEventListener('click', async ()=>{
-  overlayDiv.style.display = 'flex';
-  S("Lade 2D-Bild…");
-  const ok = await loadImageTry(IMG_PRIMARY);
-  overlayImg.src = ok ? IMG_PRIMARY : IMG_FALLBACK;
-  S(ok ? "2D-Bild geladen (dein JPG)." : "Dein JPG fehlgeschlagen – 2D-Fallback angezeigt.");
-});
+async function buildPanel(){
+  // prüfen, ob dein Bild geladen ist – sonst Fallback
+  const primary = document.getElementById('imgPrimary');
+  const fallback= document.getElementById('imgFallback');
+  const ok = await imageOK(primary);
 
-/*** Test 2: AR-Platte – keine Textur, nur Rendering prüfen ***/
-test2Btn.addEventListener('click', ()=>{
-  overlayDiv.style.display = 'none';
-  clearARContent();
-  const holder = document.createElement('a-entity');
-  holder.setAttribute('position', `0 0 ${-DIST}`);
-  const plane = document.createElement('a-plane');
-  plane.setAttribute('width', SIZE.w);
-  plane.setAttribute('height', SIZE.h);
-  plane.setAttribute('material', 'shader: flat; color:#00ffff; opacity:.35; side:double; transparent:true');
-  holder.appendChild(plane);
-  camEl.appendChild(holder);
-  S("AR-Platte 1,2 m vor der Kamera angezeigt.");
-});
+  // Holder direkt VOR die Kamera setzen (−Z ist „nach vorne“)
+  panelHolder.setAttribute('position', `0 1.6 ${-DIST_M}`); // gleiche Höhe wie Kamera
+  panelHolder.setAttribute('visible', 'true');
 
-/*** Test 3: AR-Bild mit Fallback ***/
-test3Btn.addEventListener('click', async ()=>{
-  overlayDiv.style.display = 'none';
-  clearARContent();
-  S("Lade Textur…");
-  const ok = await preloadAssets([IMG_PRIMARY, IMG_FALLBACK]);
-  const srcId = ok ? '#imgPrimary' : '#imgFallback';
-  S(ok ? "Dein JPG geladen. Zeige in AR." : "Dein JPG fehlgeschlagen – Fallback in AR.");
-  const holder = document.createElement('a-entity');
-  holder.setAttribute('position', `0 0 ${-DIST}`);
-  // Rahmen
+  // Rahmen (leicht cyan)
   const frame = document.createElement('a-plane');
-  frame.setAttribute('width', SIZE.w + 0.08);
-  frame.setAttribute('height', SIZE.h + 0.08);
+  frame.setAttribute('width',  SIZE_M.w + 0.08);
+  frame.setAttribute('height', SIZE_M.h + 0.08);
   frame.setAttribute('position','0 0 -0.02');
   frame.setAttribute('material','shader: flat; color:#00ffff; opacity:.16; transparent:true; side:double');
+
   // Bild
   const img = document.createElement('a-image');
-  img.setAttribute('src', srcId);
-  img.setAttribute('width', SIZE.w);
-  img.setAttribute('height', SIZE.h);
-  holder.appendChild(frame);
-  holder.appendChild(img);
-  camEl.appendChild(holder);
-});
+  img.setAttribute('src', ok ? '#imgPrimary' : '#imgFallback');
+  img.setAttribute('width',  SIZE_M.w);
+  img.setAttribute('height', SIZE_M.h);
 
-/*** AR Szene ***/
-function ensureScene(){
-  if (sceneEl) return;
-  mount.innerHTML = `
-    <a-scene embedded vr-mode-ui="enabled:false"
-      renderer="antialias:true; alpha:true"
-      arjs="sourceType: webcam; videoTexture:true; facingMode: environment; trackingMethod: best; debugUIEnabled:false">
-      <a-assets timeout="20000" crossorigin="anonymous"></a-assets>
-      <a-entity id="rig">
-        <!-- einfache Kamera reicht; Objekt wird relativ zur Kamera platziert -->
-        <a-camera id="cam" rotation-reader></a-camera>
-      </a-entity>
-    </a-scene>`;
-  sceneEl = document.querySelector('a-scene');
-  camEl = document.getElementById('cam');
-}
-function sceneLoaded(){
-  return new Promise(res=>{
-    if (sceneEl.hasLoaded) return res();
-    sceneEl.addEventListener('loaded', res, { once:true });
+  // alles leer machen, dann einsetzen
+  while (panelHolder.firstChild) panelHolder.removeChild(panelHolder.firstChild);
+  panelHolder.appendChild(frame);
+  panelHolder.appendChild(img);
+
+  // Panel stets in Blickrichtung halten (billboarding zur Kamera)
+  scene.addEventListener('renderstart', ()=>{
+    scene.renderer.setAnimationLoop(()=>{
+      const camObj = document.getElementById('cam').object3D;
+      const phObj  = panelHolder.object3D;
+      // Position stets DIST_M vor die Kamera schieben
+      const pos = new THREE.Vector3();
+      const dir = new THREE.Vector3();
+      camObj.getWorldPosition(pos);
+      camObj.getWorldDirection(dir); // zeigt nach vorn
+      const target = pos.clone().add(dir.multiplyScalar(DIST_M));
+      phObj.position.copy(target);
+      // horizontal zur Kamera drehen
+      phObj.lookAt(pos.x, target.y, pos.z);
+    });
   });
+
+  statusEl.textContent = ok ? 'Dein Bild geladen.' : 'Fallback-Bild angezeigt (dein JPG lud nicht).';
 }
 
-function clearARContent(){
-  const rig = camEl;
-  [...rig.children].forEach(ch=>{
-    if (ch.tagName && ch.tagName.toLowerCase() === 'a-entity') rig.removeChild(ch);
-  });
-}
-
-/*** Assets preload für Test 3 ***/
-async function preloadAssets(urls){
-  const assets = sceneEl.querySelector('a-assets');
-  assets.innerHTML = ''; // reset
-  let primaryOk = false;
-  for (const u of urls){
-    const id = u===IMG_PRIMARY ? 'imgPrimary' : 'imgFallback';
-    const el = document.createElement('img');
-    el.id = id;
-    el.crossOrigin = 'anonymous';
-    el.src = u + '?v=' + Date.now();
-    assets.appendChild(el);
-    if (u===IMG_PRIMARY) primaryOk = await imageOK(el);
-    else await imageOK(el);
-  }
-  return primaryOk;
-}
-
+// kleines Hilfs-Preload
 function imageOK(imgEl){
   return new Promise(resolve=>{
     if (imgEl.complete && imgEl.naturalWidth>0) return resolve(true);
-    const done=(ok)=>{ imgEl.removeEventListener('load',onL); imgEl.removeEventListener('error',onE); resolve(ok); };
+    const done = (ok)=>{ imgEl.removeEventListener('load',onL); imgEl.removeEventListener('error',onE); resolve(ok); };
     const onL=()=>done(true), onE=()=>done(false);
-    imgEl.addEventListener('load',onL); imgEl.addEventListener('error',onE);
+    imgEl.addEventListener('load',onL);
+    imgEl.addEventListener('error',onE);
     setTimeout(()=>done(imgEl.complete && imgEl.naturalWidth>0), 8000);
-  });
-}
-
-// 2D Bildlader
-function loadImageTry(url){
-  return new Promise(resolve=>{
-    const im = new Image();
-    im.crossOrigin = 'anonymous';
-    im.onload = ()=>resolve(true);
-    im.onerror = ()=>resolve(false);
-    im.src = url + '?v=' + Date.now();
   });
 }
 </script>
