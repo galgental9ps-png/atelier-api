@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Geo-AR – Echo der Gedanken (mit Firebase-Kontrolle)</title>
+<title>Geo-AR – Echo der Gedanken</title>
 
 <!-- A-Frame + AR.js -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
 
-<!-- Firebase (Compat CDN für einfache HTML-Seite) -->
+<!-- Firebase (Compat CDN) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
 
@@ -21,7 +21,6 @@
   .btn{padding:12px 14px;border:0;border-radius:12px;font-weight:800;color:#fff;background:#0ea5e9;margin:0 6px;cursor:pointer}
   #status{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);
     background:#000d;padding:10px 14px;border-radius:10px;z-index:5;white-space:nowrap;font-weight:700}
-
   /* HUD */
   #hud{position:fixed;top:88px;left:50%;transform:translateX(-50%);
     z-index:6;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
@@ -29,8 +28,7 @@
   #dist{font-size:18px;font-weight:900;background:#000c;padding:8px 12px;border-radius:999px}
   #corner{position:fixed;top:12px;right:12px;z-index:7;display:flex;gap:8px;align-items:center}
   .chip{background:#000d;border:1px solid #1f2937;color:#fff;padding:8px 10px;border-radius:10px;font-size:12px}
-
-  /* Diagnose Bar */
+  /* Diagnose-Bar */
   #diag{position:fixed;top:0;left:0;right:0;z-index:8;display:flex;flex-wrap:wrap;gap:6px;padding:8px;
     background:#0b1220cc;border-bottom:1px solid #1f2937}
   .pill{font-size:12px;border-radius:999px;padding:6px 10px;border:1px solid #374151}
@@ -84,7 +82,7 @@
 <div id="status">Bereit…</div>
 <div id="mount"></div>
 
-<!-- Platzier-UI -->
+<!-- Platzier-UI (Admin) -->
 <div id="placeUI" style="position:fixed;left:50%;bottom:16px;transform:translateX(-50%);
   display:none;z-index:12;background:#000c;border:1px solid #1f2937;border-radius:12px;
   padding:8px 10px;gap:8px;align-items:center">
@@ -94,7 +92,7 @@
 </div>
 
 <script>
-/*** Firebase INIT (DEINE CONFIG) ***/
+/*** Firebase INIT (deine Config) ***/
 const firebaseConfig = {
   apiKey: "AIzaSyAd4_0zLdbI6jkjcZZUtMSWCYKP14dGHzQ",
   authDomain: "geo-ar-2c66d.firebaseapp.com",
@@ -109,15 +107,15 @@ try { firebase.initializeApp(firebaseConfig); db = firebase.firestore(); } catch
 /*** Konfiguration ***/
 const IMG_SRC = 'https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg';
 
-/* Feste Spots (plus deine zwei neuen) */
+/* Feste Spots (inkl. deiner zwei neuen) */
 const BASE_TARGETS = [
-  { name: 'Altstadt-Spot',             lat: 48.366184, lon: 10.867701 },
-  { name: 'Stettenstraße 7',           lat: 48.368905, lon: 10.898445 },
-  { name: 'Neuer Spot',                lat: 48.36630,  lon: 10.86781  },  // 48.36630,10.86781
-  { name: 'Gabelsbergerstraße 64',     lat: 48.33598,  lon: 10.86728  }   // 86199
+  { name: 'Altstadt-Spot',         lat: 48.366184, lon: 10.867701 },
+  { name: 'Stettenstraße 7',       lat: 48.368905, lon: 10.898445 },
+  { name: 'Neuer Spot',            lat: 48.36630,  lon: 10.86781  }, // 48.36630,10.86781
+  { name: 'Gabelsbergerstraße 64', lat: 48.33598,  lon: 10.86728  }  // 86199
 ];
 
-let REMOTE_TARGETS = [];  // aus Firestore
+let REMOTE_TARGETS = []; // aus Firestore
 
 const BIG_SCALE  = '34 25.5 1';  // draußen sehr groß
 const TEST_SCALE = '12 9 1';     // 1m-Beacon
@@ -163,11 +161,10 @@ document.getElementById('adminSet').addEventListener('click', adminSetSpot);
 })();
 checkFirebaseHealth();
 
-/* Firebase-Kontrolle: prüft Lesen & Schreiben (legt/aktualisiert health/__ping__) */
+/* Firebase-Kontrolle (Read/Write-Ping) */
 async function checkFirebaseHealth(){
   if(!db){ fbPill.textContent='Firebase: nicht initialisiert'; fbPill.classList.add('bad'); return; }
   try{
-    // kleiner Ping-Write (für Testbetrieb; später entfernen oder per Rules absichern)
     await db.collection('health').doc('__ping__').set({ t: new Date().toISOString() }, { merge: true });
     const snap = await db.collection('health').doc('__ping__').get();
     if (snap.exists){
@@ -184,13 +181,13 @@ async function checkFirebaseHealth(){
   }
 }
 
-/*** START – Szene immer bauen, GPS „best effort“ ***/
+/*** Start – Szene immer bauen, GPS „best effort“ ***/
 async function initGeo(){
   try{
     statusEl.textContent = 'Starte… Kamera & Sensoren';
     await ensureCameraAndMotion();
 
-    ensureScene();           // Kamera sofort sichtbar – auch ohne GPS
+    ensureScene();                   // Kamera sofort sichtbar
     overlay.style.display = 'none';
     started = true;
 
@@ -208,7 +205,7 @@ async function initGeo(){
   }
 }
 
-/*** Szene EINMAL bauen (kein Rebuild – verhindert Kamera-Freeze) ***/
+/*** Szene EINMAL bauen (kein Rebuild → verhindert Kamera-Freeze) ***/
 function ensureScene(){
   if (sceneEl) return;
   mount.innerHTML = `
@@ -261,7 +258,7 @@ function appendSpotEntity(t, parentEl){
   (parentEl || sceneEl).appendChild(wrap);
 }
 
-/*** Admin-Setzen: Live-Kamera + Speichern → sofort sichtbar für alle ***/
+/*** Admin-Setzen: Live-Kamera + Speichern → sofort sichtbar ***/
 async function adminSetSpot(){
   try{
     const pw = prompt('Admin-Passwort eingeben:');
@@ -291,10 +288,8 @@ async function adminSetSpot(){
         };
         await db.collection('spots').add(docData);
 
-        // Lokale Liste + sofort ins AR einfügen (ohne Scene-Rebuild!)
-        REMOTE_TARGETS.push(docData);
-        appendSpotEntity(docData, remoteLayerEl);
-
+        REMOTE_TARGETS.push(docData);          // lokal merken
+        appendSpotEntity(docData, remoteLayerEl); // sofort sichtbar
         statusEl.textContent = `Gespeichert bei ${docData.lat}, ${docData.lon} (±${Math.round(accuracy)} m).`;
       }catch(err){
         console.error(err);
@@ -426,7 +421,7 @@ function createPlacingMarker(){
 }
 function removePlacingMarker(){ if (placingMarkerEl){ placingMarkerEl.remove(); placingMarkerEl = null; } }
 
-/*** HUD-Logik (Entfernung + Pfeil) ***/
+/*** HUD-Logik ***/
 function updateHudWithNearest(coords){
   const R=6371e3, toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
   const distM = (la1,lo1,la2,lo2)=>{
