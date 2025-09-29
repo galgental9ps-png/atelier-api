@@ -1,79 +1,135 @@
 <!doctype html>
 <html lang="de">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>AR.js – Würfel ganz nah</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>AR Diagnose – 3 Wege</title>
 
 <!-- A-Frame + AR.js -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
 
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;background:#000}
-  #overlay{position:fixed;inset:0;display:grid;place-items:center;background:#000c;z-index:10;color:#fff}
-  .btn{padding:12px 16px;border-radius:12px;background:#0ea5e9;color:#fff;font-weight:800;border:0}
-  #hint{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:9;color:#fff;background:#000a;padding:8px 12px;border-radius:10px;font-family:system-ui}
+  html,body{margin:0;height:100%;background:#000;color:#fff;font-family:system-ui,Segoe UI,Roboto,Inter,sans-serif}
+  #bar{position:fixed;inset:auto 0 0 0;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;
+       background:#000c;padding:10px;z-index:20;border-top:1px solid #1f2937}
+  button{padding:10px 12px;border:0;border-radius:10px;background:#0ea5e9;color:#fff;font-weight:800}
+  .alt{background:#10b981} .warn{background:#f59e0b}
+  #hint{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:20;background:#000a;padding:8px 12px;border-radius:10px}
+  #stage{position:fixed;inset:0}
+  a-scene{position:absolute;inset:0}
+  #videoBg{position:absolute;inset:0;object-fit:cover;width:100%;height:100%;z-index:0;display:none}
+  #linkHiro{position:fixed;top:8px;left:8px;z-index:21;background:#111;padding:6px 10px;border-radius:8px;border:1px solid #333}
+  a{color:#0ea5e9}
 </style>
 </head>
 <body>
 
-<div id="overlay">
-  <div>
-    <h1>AR Test – Würfel ganz nah</h1>
-    <p>Tippe auf „Start“. Du solltest einen <b>sehr großen Würfel</b> direkt vor dir sehen.</p>
-    <ul style="text-align:left;max-width:560px;opacity:.9">
-      <li>Seite muss über <b>HTTPS</b> laufen (z.&nbsp;B. Firebase Hosting).</li>
-      <li>Kamera-Zugriff erlauben.</li>
-      <li>Android: Chrome • iOS: Safari.</li>
-    </ul>
-    <button id="start" class="btn">Start</button>
-  </div>
+<div id="hint">Wähle einen Test unten. iOS: Safari → Einstellungen → Bewegung & Orientierung zulassen.</div>
+<div id="linkHiro" style="display:none">
+  Marker nötig: <a href="https://raw.githubusercontent.com/AR-js-org/AR.js/master/data/images/HIRO.jpg" target="_blank">HIRO öffnen</a>
 </div>
 
-<div id="hint" style="display:none">Wenn du nichts siehst: Handy minimal bewegen/kippen.</div>
-<div id="mount"></div>
+<div id="stage"></div>
+
+<div id="bar">
+  <button id="t1" class="warn">1) Marker-AR (HIRO)</button>
+  <button id="t2" class="alt">2) Kamera-Hintergrund + 3D (ohne AR.js)</button>
+  <button id="t3">3) AR.js (markerlos) – Würfel nah</button>
+</div>
 
 <script>
-document.getElementById('start').addEventListener('click', async ()=>{
-  document.getElementById('overlay').style.display='none';
-  document.getElementById('hint').style.display='block';
+const stage = document.getElementById('stage');
+const linkHiro = document.getElementById('linkHiro');
 
-  // Kamera-Rechte aktiv anfragen (hilft manchen Browsern)
+// Hilfsfunktion: Kamera vorab anfragen (manche Browser brauchen das)
+async function ensureCam(){
   try{
-    await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
-  }catch(e){ console.warn('getUserMedia warn:', e); }
+    await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+  }catch(e){ console.warn('getUserMedia:', e); }
+}
 
-  // AR-Szene einfügen
-  document.getElementById('mount').innerHTML = `
+/* --- TEST 1: MARKER-AR (HIRO) -----------------------------------------
+   Erwartung: Kamera sichtbar. Wenn du auf den gedruckten/angezeigten HIRO-Marker zielst,
+   erscheint ein riesiger magenta Würfel auf dem Marker.
+------------------------------------------------------------------------ */
+document.getElementById('t1').addEventListener('click', async ()=>{
+  linkHiro.style.display='block';
+  await ensureCam();
+  stage.innerHTML = `
     <a-scene
       embedded
-      vr-mode-ui="enabled:false"
       renderer="antialias:true; alpha:true"
-      arjs="sourceType: webcam; videoTexture:true; trackingMethod: best; facingMode: environment;">
+      vr-mode-ui="enabled:false"
+      arjs="sourceType: webcam; detectionMode: mono; matrixCodeType: 3x3; debugUIEnabled: false;">
       
-      <!-- SEHR NAH & SEHR GROSS -->
-      <!-- 1) Riesenwürfel nur 1 m vor dir -->
-      <a-box position="0 0 -1"
-             width="4" height="4" depth="4"
-             material="color: #00ffff; opacity:0.95; shader:flat;"
-             animation="property=rotation; to:0 360 0; loop:true; dur:6000; easing=linear">
+      <a-marker preset="hiro">
+        <a-box position="0 0.5 0"
+               width="1" height="1" depth="1"
+               material="color:#ff00ff; opacity:0.9; shader:flat"
+               animation="property=rotation; to:0 360 0; loop:true; dur:4000; easing=linear">
+        </a-box>
+        <!-- Wird auf dem Marker skaliert für bessere Sichtbarkeit -->
+        <a-entity scale="3 3 3"></a-entity>
+      </a-marker>
+
+      <a-entity camera></a-entity>
+    </a-scene>
+  `;
+});
+
+/* --- TEST 2: KAMERA-HINTERGRUND + 3D (OHNE AR.JS) ----------------------
+   Erwartung: Vollbild-Livevideo + vorne drauf ein großer drehender Würfel.
+   Das testet reine Kamera+Overlay ohne AR.js.
+------------------------------------------------------------------------ */
+document.getElementById('t2').addEventListener('click', async ()=>{
+  linkHiro.style.display='none';
+  stage.innerHTML = `
+    <video id="videoBg" autoplay playsinline muted></video>
+    <a-scene embedded renderer="antialias:true; alpha:true" background="color: #000">
+      <a-entity light="type:ambient; intensity:1"></a-entity>
+      <a-box position="0 0 -2"
+             width="1.6" height="1.6" depth="1.6"
+             material="color:#00ffff; opacity:0.95; shader:flat"
+             animation="property=rotation; to:0 360 0; loop:true; dur:5000; easing=linear">
       </a-box>
+      <a-camera position="0 0 0"></a-camera>
+    </a-scene>
+  `;
+  const v = document.getElementById('videoBg');
+  v.style.display='block';
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}, audio:false});
+    v.srcObject = stream;
+  }catch(e){
+    alert('Kamera kann nicht gestartet werden: ' + e.message);
+  }
+});
 
-      <!-- 2) Noch größerer Würfel in 2.5 m Entfernung -->
-      <a-box position="0 0 -2.5"
-             width="8" height="8" depth="8"
-             material="color:#ff00ff; opacity:0.4; shader:flat;">
-      </a-box>
+/* --- TEST 3: AR.JS MARKERLOS – WÜRFEL NAH ------------------------------
+   Erwartung: Kamera sichtbar, direkt 1 m vor dir ein großer türkis Würfel.
+   (AR.js ohne Marker/GPS; sollte in vielen Fällen funktionieren, aber nicht auf allen Geräten)
+------------------------------------------------------------------------ */
+document.getElementById('t3').addEventListener('click', async ()=>{
+  linkHiro.style.display='none';
+  await ensureCam();
+  stage.innerHTML = `
+    <a-scene
+      embedded
+      renderer="antialias:true; alpha:true"
+      vr-mode-ui="enabled:false"
+      arjs="sourceType: webcam; trackingMethod: best; debugUIEnabled: false;">
+      
+      <!-- Fester Anker im Kameraraum -->
+      <a-entity position="0 0 0">
+        <a-box position="0 0 -1"
+               width="2.5" height="2.5" depth="2.5"
+               material="color:#00ffff; opacity:0.95; shader:flat"
+               animation="property=rotation; to:0 360 0; loop:true; dur:6000; easing=linear">
+        </a-box>
+      </a-entity>
 
-      <!-- 3) Heller Ring bei 1 m als visuelle Hilfe -->
-      <a-ring position="0 -0.1 -1" rotation="-90 0 0"
-              radius-inner="1.2" radius-outer="1.6"
-              material="color:#ffffff; opacity:0.9; shader:flat;">
-      </a-ring>
-
-      <!-- Kamera -->
-      <a-camera></a-camera>
+      <a-entity camera></a-entity>
     </a-scene>
   `;
 });
