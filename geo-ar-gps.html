@@ -9,7 +9,7 @@
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
 
-<!-- Firebase (Compat CDN, ideal für einfache HTML-Datei ohne Build-Tool) -->
+<!-- Firebase (Compat CDN für einfache HTML-Seiten) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
 
@@ -18,7 +18,7 @@
     font-family:-apple-system,system-ui,Segoe UI,Inter,Roboto,sans-serif}
   #overlay{position:fixed;inset:0;display:grid;place-items:center;
     background:linear-gradient(#000c,#000c);z-index:10;text-align:center;padding:16px}
-  .btn{padding:12px 14px;border:0;border-radius:12px;font-weight:800;color:#fff;background:#0ea5e9;margin:0 6px}
+  .btn{padding:12px 14px;border:0;border-radius:12px;font-weight:800;color:#fff;background:#0ea5e9;margin:0 6px;cursor:pointer}
   #status{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);
     background:#000d;padding:10px 14px;border-radius:10px;z-index:5;white-space:nowrap;font-weight:700}
   /* HUD */
@@ -59,7 +59,6 @@
     <button id="start" class="btn">Los geht’s (Geo-Spots)</button>
     <button id="spawnHere" class="btn" style="background:#10b981">Hier testen (1 m vor dir)</button>
     <button id="askGeo" class="btn" style="background:#f59e0b">Standort erlauben / neu holen</button>
-    <!-- Admin-Button -->
     <button id="adminSet" class="btn" style="background:#ef4444">Spot setzen (Admin)</button>
     <div style="font-size:13px;opacity:.8;margin-top:10px">
       Hinweis: Standort funktioniert nur über <b>HTTPS</b> oder <b>localhost</b>. Kompass kurz kalibrieren (∞-Bewegung).
@@ -82,8 +81,17 @@
 <div id="status">Bereit…</div>
 <div id="mount"></div>
 
+<!-- Platzier-UI (nur im Admin-Setzmodus sichtbar) -->
+<div id="placeUI" style="position:fixed;left:50%;bottom:16px;transform:translateX(-50%);
+  display:none;z-index:12;background:#000c;border:1px solid #1f2937;border-radius:12px;
+  padding:8px 10px;gap:8px;align-items:center">
+  <span style="font-weight:800;margin-right:8px">📍 Setz-Modus aktiv</span>
+  <button id="confirmPlace" class="btn" style="background:#10b981">Hier speichern</button>
+  <button id="cancelPlace" class="btn" style="background:#6b7280">Abbrechen</button>
+</div>
+
 <script>
-/*** Firebase INIT (mit deiner Config) ***/
+/*** Firebase INIT (deine Config) ***/
 const firebaseConfig = {
   apiKey: "AIzaSyAd4_0zLdbI6jkjcZZUtMSWCYKP14dGHzQ",
   authDomain: "geo-ar-2c66d.firebaseapp.com",
@@ -132,7 +140,12 @@ const geoPill   = document.getElementById('geoPill');
 const headPill  = document.getElementById('headPill');
 const posPill   = document.getElementById('posPill');
 
+const placeUI = document.getElementById('placeUI');
+const confirmPlaceBtn = document.getElementById('confirmPlace');
+const cancelPlaceBtn  = document.getElementById('cancelPlace');
+
 let sceneEl, localImgEl, started = false;
+let placingMarkerEl = null;
 let deviceHeadingDeg = null;
 let geoWatchId = null;
 
@@ -152,52 +165,95 @@ document.getElementById('adminSet').addEventListener('click', adminSetSpot);
 /*** Start: Geo-Spots laden und anzeigen ***/
 async function initGeo(){
   try{
-    await ensureCameraAndMotion();
-    await ensureGeoWatch();
-    await loadRemoteSpots();     // Firestore-Spots ziehen
-    buildScene();                // alle (BASE + REMOTE) rendern
+    statusEl.textContent = 'Starte… Kamera & Sensoren anfordern';
+    await ensureCameraAndMotion();     // 1) Kamera + Sensorrechte
+    statusEl.textContent = 'Hole Standort (Erlaubnis geben)…';
+    await ensureGeoWatch();            // 2) watchPosition starten
+    statusEl.textContent = 'Lade Spots…';
+    await loadRemoteSpots();           // 3) Firestore-Spots
+    buildScene();                      // 4) Szene bauen
     overlay.style.display = 'none';
     started = true;
+    statusEl.textContent = 'Bereit. Geo-Spots aktiv.';
   }catch(err){
-    statusEl.textContent = 'Fehler: ' + err.message;
+    console.error(err);
+    statusEl.textContent = 'Fehler beim Start: ' + err.message;
   }
 }
 
-/*** Admin: aktuellen Ort als Spot speichern ***/
+/*** Admin: Live-Setzmodus mit Kamera + Speichern ***/
 async function adminSetSpot(){
   try{
     const pw = prompt('Admin-Passwort eingeben:');
     if (pw !== '1234'){ alert('Falsches Passwort'); return; }
 
     await ensureCameraAndMotion();
-    const pos = await getOnceLocation();
-    const { latitude, longitude, accuracy } = pos.coords;
-
-    if(!db){
-      alert('Firebase nicht konfiguriert – kann nicht speichern.');
-      return;
+    if (!started){
+      // Szene mit aktuellen (lokal + remote) Spots bauen, damit Kamera live ist
+      await loadRemoteSpots();
+      buildScene();
+      overlay.style.display = 'none';
+      started = true;
     }
 
-    const name = prompt('Name für den Spot:','Echo der Gedanken');
-    const docData = {
-      name: name || 'Echo der Gedanken',
-      lat: Number(latitude.toFixed(6)),
-      lon: Number(longitude.toFixed(6)),
-      img: IMG_SRC,
-      createdAt: new Date().toISOString()
+    // Sichtbaren Setz-Marker 1 m vor dir einblenden + UI zeigen
+    createPlacingMarker();
+    placeUI.style.display = 'flex';
+    statusEl.textContent = 'Setz-Modus: Richte die Kamera aus. „Hier speichern“, um deinen Spot zu setzen.';
+
+    const onConfirm = async ()=>{
+      try{
+        const pos = await getOnceLocation();
+        const { latitude, longitude, accuracy } = pos.coords;
+
+        if(!db){
+          alert('Firebase nicht konfiguriert – kann nicht speichern.');
+          return;
+        }
+
+        const name = prompt('Name für den Spot:','Echo der Gedanken');
+        const docData = {
+          name: name || 'Echo der Gedanken',
+          lat: Number(latitude.toFixed(6)),
+          lon: Number(longitude.toFixed(6)),
+          img: IMG_SRC,
+          createdAt: new Date().toISOString()
+        };
+        await db.collection('spots').add(docData);
+
+        // direkt in dieser Session anzeigen
+        REMOTE_TARGETS.push({ name: docData.name, lat: docData.lat, lon: docData.lon, img: docData.img });
+        rebuildSceneIfStarted();
+
+        statusEl.textContent = `Spot gespeichert bei ${docData.lat}, ${docData.lon} (±${Math.round(accuracy)} m).`;
+        alert('Gespeichert! Über „Los geht’s“ sehen alle den Spot.');
+      }catch(err){
+        console.error(err);
+        alert('Fehler beim Speichern: '+err.message);
+      }finally{
+        cleanupPlacingUI();
+      }
     };
-    await db.collection('spots').add(docData);
 
-    statusEl.textContent = `Spot gespeichert bei ${docData.lat}, ${docData.lon} (±${Math.round(accuracy)} m).`;
+    const onCancel = ()=>{
+      statusEl.textContent = 'Setz-Modus abgebrochen.';
+      cleanupPlacingUI();
+    };
 
-    // Direkt in diese Session übernehmen
-    REMOTE_TARGETS.push({ name: docData.name, lat: docData.lat, lon: docData.lon, img: docData.img });
-    rebuildSceneIfStarted();
-    alert('Gespeichert! Öffne den Link normal, um den Spot mit „Los geht’s“ zu sehen.');
+    function cleanupPlacingUI(){
+      removePlacingMarker();
+      placeUI.style.display = 'none';
+      confirmPlaceBtn.removeEventListener('click', onConfirm);
+      cancelPlaceBtn.removeEventListener('click', onCancel);
+    }
+
+    confirmPlaceBtn.addEventListener('click', onConfirm);
+    cancelPlaceBtn.addEventListener('click', onCancel);
+
   }catch(err){
     console.error(err);
     statusEl.textContent = 'Admin-Fehler: ' + err.message;
-    alert('Fehler beim Speichern: '+err.message);
+    alert('Fehler: '+err.message);
   }
 }
 
@@ -213,6 +269,7 @@ async function loadRemoteSpots(){
 
 /*** Kamera + Sensoren ***/
 async function ensureCameraAndMotion(){
+  // Kamera
   try{
     await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
     camPill.textContent = 'Kamera: OK';
@@ -220,8 +277,9 @@ async function ensureCameraAndMotion(){
   }catch(err){
     camPill.textContent = 'Kamera: BLOCKIERT';
     camPill.classList.add('bad');
-    throw err;
+    throw new Error('Kamera blockiert. Bitte erlauben.');
   }
+  // Sensor-Permission (iOS)
   try{
     if (typeof DeviceMotionEvent?.requestPermission === 'function') {
       await DeviceMotionEvent.requestPermission().catch(()=>{});
@@ -254,6 +312,7 @@ async function ensureGeoWatch(){
     geoPill.classList.add('bad');
     throw new Error('Geolocation nicht unterstützt');
   }
+  // Einmalig, um Permission zu triggern
   await new Promise((res,rej)=>{
     navigator.geolocation.getCurrentPosition(
       pos => { updatePosPill(pos.coords); res(); },
@@ -261,9 +320,10 @@ async function ensureGeoWatch(){
       { enableHighAccuracy:true, timeout:12000, maximumAge:0 }
     );
   });
+  // Laufender Watch
   if(geoWatchId!=null){ navigator.geolocation.clearWatch(geoWatchId); }
   geoWatchId = navigator.geolocation.watchPosition(
-    pos => { 
+    pos => {
       geoPill.textContent = 'Standort: OK';
       geoPill.classList.remove('warn','bad'); geoPill.classList.add('ok');
       updatePosPill(pos.coords);
@@ -308,8 +368,46 @@ function buildScene(){
   sceneEl = document.querySelector('a-scene');
 }
 
+/*** Szene ggf. neu aufbauen ***/
 function rebuildSceneIfStarted(){
   if(started){ buildScene(); }
+}
+
+/*** Setz-Marker (1 m vor dir) ***/
+function createPlacingMarker(){
+  removePlacingMarker();
+  placingMarkerEl = document.createElement('a-entity');
+
+  const bg = document.createElement('a-plane');
+  bg.setAttribute('width','14');
+  bg.setAttribute('height','10.5');
+  bg.setAttribute('material','shader: flat; color: #00ffff; opacity: 0.18; transparent: true');
+  bg.setAttribute('position','0 0 0');
+
+  const img = document.createElement('a-image');
+  img.setAttribute('src', IMG_SRC);
+  img.setAttribute('scale', TEST_SCALE);
+  img.setAttribute('material','shader: flat; opacity: 1; transparent: false');
+  img.setAttribute('look-at','[camera]');
+
+  const frame = document.createElement('a-ring');
+  frame.setAttribute('radius-inner','6.2');
+  frame.setAttribute('radius-outer','6.6');
+  frame.setAttribute('position','0 0 0.01');
+  frame.setAttribute('material','color: #00ffff; shader: flat; opacity: 0.95; transparent: true');
+  frame.setAttribute('animation__pulse','property=scale; to=1.08 1.08 1; dir=alternate; dur=600; loop=true; easing=easeInOutSine');
+
+  placingMarkerEl.appendChild(bg);
+  placingMarkerEl.appendChild(img);
+  placingMarkerEl.appendChild(frame);
+
+  placingMarkerEl.setAttribute('position','0 0 -1'); // 1 m vor dir
+  const scene = mount.querySelector('a-scene');
+  if (scene){ scene.appendChild(placingMarkerEl); }
+}
+
+function removePlacingMarker(){
+  if (placingMarkerEl){ placingMarkerEl.remove(); placingMarkerEl = null; }
 }
 
 /*** HUD-Logik (Entfernung + Pfeil) ***/
