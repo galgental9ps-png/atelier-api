@@ -1,223 +1,262 @@
 <!doctype html>
 <html lang="de">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Web-AR (AR.js) – Marker + GPS</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Geo-AR – Würfel & Bild mit Firebase</title>
 
 <!-- A-Frame + AR.js -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
-<!-- Blick-zu-Kamera für Billboard -->
 <script src="https://unpkg.com/aframe-look-at-component@1.0.0/dist/aframe-look-at-component.min.js"></script>
 
+<!-- Firebase -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+  import { getFirestore, collection, addDoc, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAd4_0zLdbI6jkjcZZUtMSWCYKP14dGHzQ",
+    authDomain: "geo-ar-2c66d.firebaseapp.com",
+    projectId: "geo-ar-2c66d",
+    storageBucket: "geo-ar-2c66d.appspot.com",
+    messagingSenderId: "232770478087",
+    appId: "1:232770478087:web:d0d6cb8a585bdef5fdcaa2"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  window._db = db;
+  window._fs = { collection, addDoc, getDocs, serverTimestamp };
+</script>
+
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,Inter,Roboto}
-  #top{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:20;background:#000a;border:1px solid #333;border-radius:10px;padding:6px 10px;font-size:13px}
-  #bar{position:fixed;inset:auto 0 0 0;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;background:#000c;padding:10px;z-index:20;border-top:1px solid #1f2937}
-  button{padding:10px 12px;border:0;border-radius:10px;background:#0ea5e9;color:#fff;font-weight:800}
-  .alt{background:#10b981}.warn{background:#f59e0b}
-  #hud{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:20;display:flex;flex-direction:column;align-items:center;gap:8px}
-  #arrow{width:88px;height:88px;filter:drop-shadow(0 0 8px #00ffff);transition:transform 80ms linear}
-  #dist{font-size:14px;background:#000a;padding:6px 10px;border-radius:999px}
-  a-scene{position:fixed;inset:0}
-  #hiro{position:fixed;top:8px;left:8px;z-index:21;background:#111;padding:6px 10px;border-radius:8px;border:1px solid #333;display:none}
-  #httpsWarn{position:fixed;top:8px;right:8px;z-index:21;background:#7f1d1d;color:#fff;padding:6px 10px;border-radius:8px;display:none}
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,Segoe UI,Inter,Roboto,sans-serif}
+  #overlay{position:fixed;inset:0;display:grid;place-items:center;background:#000c;z-index:10;text-align:center;padding:16px}
+  .btn{padding:12px 14px;border:0;border-radius:12px;font-weight:800;color:#fff;background:#0ea5e9;margin:0 6px;cursor:pointer}
+  #status{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);
+    background:#000d;padding:10px 14px;border-radius:10px;z-index:5;white-space:nowrap;font-weight:700}
+  #hud{position:fixed;top:84px;left:50%;transform:translateX(-50%);
+    z-index:6;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
+  #arrow{width:96px;height:96px;filter:drop-shadow(0 0 8px #00ffff);transition:transform 80ms linear}
+  #dist{font-size:18px;font-weight:900;background:#000c;padding:8px 12px;border-radius:999px}
+  #corner{position:fixed;top:12px;right:12px;z-index:7;display:flex;gap:8px;align-items:center}
+  .chip{background:#000d;border:1px solid #1f2937;color:#fff;padding:8px 10px;border-radius:10px;font-size:12px}
 </style>
 </head>
 <body>
 
-<div id="top">Tipps: HTTPS, Kamera erlauben, iOS: Einstellungen → Safari → „Bewegung & Orientierung“ aktivieren.</div>
-<div id="hiro">Marker nötig: <a href="https://raw.githubusercontent.com/AR-js-org/AR.js/master/data/images/HIRO.jpg" target="_blank" style="color:#0ea5e9">HIRO anzeigen</a></div>
-<div id="httpsWarn">⚠️ Ohne HTTPS verweigern Browser die Kamera/Geodaten.</div>
-
-<div id="hud" style="display:none">
-  <svg id="arrow" viewBox="0 0 100 100"><polygon points="50,5 80,55 60,55 60,95 40,95 40,55 20,55" fill="#00ffff" opacity="0.95"/></svg>
-  <div id="dist">–</div>
+<div id="overlay">
+  <div>
+    <h1 style="margin:0 0 8px">Geo-AR starten</h1>
+    <p style="opacity:.9;max-width:640px;margin:0 auto 14px">
+      Erlaube <b>Kamera</b> & <b>Standort</b>.<br>
+      „Los geht’s“ zeigt Spots mit Würfel + Bild + HUD.<br>
+      „Spot setzen“ speichert neuen Spot (PW: <code>1234</code>).
+    </p>
+    <button id="start" class="btn">Los geht’s</button>
+    <button id="admin" class="btn" style="background:#ef4444">Spot setzen</button>
+  </div>
 </div>
 
-<div id="bar">
-  <button id="btn1" class="warn">1) Marker-AR (HIRO)</button>
-  <button id="btn2" class="alt">2) Location-AR (GPS)</button>
-  <button id="sensor" title="iOS/Android Sensorfreigabe">Sensor erlauben</button>
+<div id="corner">
+  <div class="chip">🎯 Nächster Spot: <span id="nearestName">–</span></div>
 </div>
 
-<div id="stage"></div>
+<div id="hud">
+  <svg id="arrow" viewBox="0 0 100 100">
+    <polygon points="50,5 80,55 60,55 60,95 40,95 40,55 20,55" fill="#00ffff" opacity="0.95"/>
+  </svg>
+  <div id="dist">Entfernung: –</div>
+</div>
 
-<script>
-/* ===== Grundchecks ===== */
-if(!(location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')){
-  document.getElementById('httpsWarn').style.display='block';
-}
+<div id="status">Bereit…</div>
+<div id="mount"></div>
 
-/* ===== Sensorfreigabe (iOS/Android) ===== */
-async function askSensors(){
-  try{
-    if (typeof DeviceMotionEvent?.requestPermission === 'function'){ await DeviceMotionEvent.requestPermission().catch(()=>{}); }
-    if (typeof DeviceOrientationEvent?.requestPermission === 'function'){ await DeviceOrientationEvent.requestPermission().catch(()=>{}); }
-  }catch(e){}
-}
-document.getElementById('sensor').addEventListener('click', askSensors);
+<script type="module">
+/*** Firebase handles ***/
+const { collection, addDoc, getDocs, serverTimestamp } = window._fs;
+const db = window._db;
 
-/* ===== Kamera explizit anfragen (hilft manchen Browsern) ===== */
-async function ensureCam(){
-  try{
-    await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
-  }catch(e){
-    alert('Kamera konnte nicht gestartet werden: '+e.message);
-  }
-}
-
-/* ===== GEO + KOMPASS für HUD ===== */
-let deviceHeadingDeg = null, geoWatchId = null;
-const hud = document.getElementById('hud');
+/*** UI ***/
+const mount = document.getElementById('mount');
+const overlay = document.getElementById('overlay');
+const statusEl = document.getElementById('status');
 const arrowEl = document.getElementById('arrow');
 const distEl = document.getElementById('dist');
+const nearestNameEl = document.getElementById('nearestName');
 
-function startHeading(){
-  window.addEventListener('deviceorientation', e=>{
-    if (typeof e.webkitCompassHeading === 'number'){ deviceHeadingDeg = e.webkitCompassHeading; }
-    else if (e.absolute===true && typeof e.alpha==='number'){ deviceHeadingDeg = 360 - e.alpha; }
-  }, true);
-}
-function ensureGeoWatch(updateFn){
-  if(!('geolocation' in navigator)){ alert('Geolocation nicht unterstützt'); return; }
-  navigator.geolocation.getCurrentPosition(p=>{
-    updateFn(p.coords);
-    if(geoWatchId!=null) navigator.geolocation.clearWatch(geoWatchId);
-    geoWatchId = navigator.geolocation.watchPosition(
-      pos=>updateFn(pos.coords),
-      err=>{ distEl.textContent='GPS-Fehler: '+err.message; },
-      { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
-    );
-  }, err=>alert('GPS-Fehler: '+err.message), { enableHighAccuracy:true, timeout:15000, maximumAge:0 });
-}
+/*** Settings ***/
+const IMG_SRC = "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg";
 
-const toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
-function distM(la1,lo1,la2,lo2){
-  const R=6371e3, dLa=toRad(la2-la1), dLo=toRad(lo2-lo1);
-  const a=Math.sin(dLa/2)**2+Math.cos(toRad(la1))*Math.cos(toRad(la2))*Math.sin(dLo/2)**2;
-  return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-}
-function bearing(la1,lo1,la2,lo2){
-  const φ1=toRad(la1), φ2=toRad(la2), λ1=toRad(lo1), λ2=toRad(lo2);
-  const y=Math.sin(λ2-λ1)*Math.cos(φ2);
-  const x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*cos(φ2)*Math.cos(λ2-λ1);
-  return (toDeg(Math.atan2(y,x))+360)%360;
-}
-function cos(x){ return Math.cos(x); }
-
-/* ===== Deine GPS-Spots (hier editierbar) ===== */
-const TARGETS = [
-  { name: 'Altstadt-Spot',         lat: 48.366184, lon: 10.867701 },
-  { name: 'Stettenstraße 7',       lat: 48.368905, lon: 10.898445 },
-  { name: 'Neuer Spot',            lat: 48.36630,  lon: 10.86781  },
-  { name: 'Gabelsbergerstraße 64', lat: 48.33598,  lon: 10.86728  }
+/* Feste Spots */
+const BASE_TARGETS = [
+  { name: 'Altstadt', lat: 48.366184, lon: 10.867701 },
+  { name: 'Stettenstraße 7', lat: 48.368905, lon: 10.898445 }
 ];
-// Optional: Firestore-Spots hinzuladen und TARGETS erweitern (du hast das schon) – hier weggelassen, um es simpel zu halten.
+let REMOTE_TARGETS = [];
 
-/* ====================================================================== */
-/* 1) MARKER-AR (HIRO) – robust                                           */
-/* ====================================================================== */
-document.getElementById('btn1').addEventListener('click', async ()=>{
-  await ensureCam(); await askSensors();
-  document.getElementById('hiro').style.display='block';
-  hud.style.display='none';
-  document.getElementById('stage').innerHTML = `
-    <a-scene embedded vr-mode-ui="enabled:false" renderer="antialias:true; alpha:true"
-      arjs="sourceType: webcam; detectionMode: mono; matrixCodeType: 3x3; debugUIEnabled:false;">
-      
-      <!-- Riesenwürfel auf dem Marker -->
-      <a-marker preset="hiro">
-        <a-entity scale="3 3 3">
-          <a-box position="0 0.5 0" width="1.6" height="1.6" depth="1.6"
-                 material="color:#00ffff; opacity:0.95; shader:flat"
-                 animation="property: rotation; to: 0 360 0; loop: true; dur: 5000; easing: linear"></a-box>
-        </a-entity>
-      </a-marker>
+/*** State ***/
+let sceneEl, started=false, deviceHeadingDeg=null, geoWatchId=null;
 
-      <a-entity camera></a-entity>
-    </a-scene>
-  `;
-});
+/*** Buttons ***/
+document.getElementById('start').addEventListener('click', startViewer);
+document.getElementById('admin').addEventListener('click', startAdmin);
 
-/* ====================================================================== */
-/* 2) LOCATION-AR (GPS) – AR.js gps-entity-place                          */
-/* ====================================================================== */
-document.getElementById('btn2').addEventListener('click', async ()=>{
-  await ensureCam(); await askSensors(); startHeading();
-  hud.style.display='block';
-  document.getElementById('hiro').style.display='none';
+/*** Start Viewer ***/
+async function startViewer(){
+  try{
+    await ensureCameraAndMotion();
+    ensureScene();
+    overlay.style.display='none';
+    await ensureGeoWatch();
 
-  // Szene
-  document.getElementById('stage').innerHTML = `
-    <a-scene embedded vr-mode-ui="enabled:false" renderer="antialias:true; alpha:true"
+    BASE_TARGETS.forEach(t=>appendSpotEntity(t));
+    await loadRemoteSpots();
+    REMOTE_TARGETS.forEach(t=>appendSpotEntity(t));
+
+    started=true;
+    statusEl.textContent='Viewer aktiv.';
+  }catch(e){ statusEl.textContent='Fehler: '+e.message; }
+}
+
+/*** Start Admin ***/
+async function startAdmin(){
+  const pw=prompt('Passwort:');
+  if(pw!=='1234'){ alert('Falsch!'); return; }
+
+  try{
+    await ensureCameraAndMotion();
+    ensureScene();
+    overlay.style.display='none';
+    const pos=await getOnceLocation();
+    const { latitude, longitude, accuracy }=pos.coords;
+
+    await addDoc(collection(db,'spots'),{
+      name:'Echo der Gedanken',
+      img:IMG_SRC,
+      lat:Number(latitude.toFixed(6)),
+      lon:Number(longitude.toFixed(6)),
+      createdAt:serverTimestamp()
+    });
+
+    appendSpotEntity({name:'Echo der Gedanken', img:IMG_SRC, lat:latitude, lon:longitude});
+    statusEl.textContent=`Gespeichert: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} (±${Math.round(accuracy)} m)`;
+  }catch(e){ statusEl.textContent='Admin-Fehler: '+e.message; }
+}
+
+/*** Szene ***/
+function ensureScene(){
+  if(sceneEl) return;
+  mount.innerHTML=`
+    <a-scene embedded vr-mode-ui="enabled:false"
+      renderer="antialias:true; alpha:true"
       arjs="sourceType: webcam; videoTexture:true; trackingMethod: best; facingMode: environment;">
-      
-      <!-- Hinweis: nahe/far Clip groß setzen, damit Distanzen nicht wegclippen -->
-      <a-camera gps-camera="gpsMinDistance: 0; gpsTimeInterval: 1000" near="0.01" far="100000" rotation-reader></a-camera>
-    </a-scene>
-  `;
-  const scene = document.querySelector('a-scene');
+      <a-camera gps-camera rotation-reader></a-camera>
+    </a-scene>`;
+  sceneEl=document.querySelector('a-scene');
+  startHeadingListeners();
+}
 
-  // Sehr großes Billboard für JEDE Koordinate
-  TARGETS.forEach((t,i)=>{
-    const holder = document.createElement('a-entity');
-    holder.setAttribute('gps-entity-place', `latitude: ${t.lat}; longitude: ${t.lon};`);
+/*** Spot Entity (Würfel + Bild + Säule) ***/
+function appendSpotEntity(d){
+  const el=document.createElement('a-entity');
+  el.setAttribute('gps-entity-place',`latitude:${d.lat}; longitude:${d.lon}`);
 
-    const bg = document.createElement('a-plane');
-    bg.setAttribute('width','36');
-    bg.setAttribute('height','27');
-    bg.setAttribute('position','0 0 -0.02');
-    bg.setAttribute('material','shader: flat; color: #00ffff; opacity: 0.12; transparent: true; side: double');
-    bg.setAttribute('look-at','[gps-camera]');
+  // Würfel
+  const cube=document.createElement('a-box');
+  cube.setAttribute('width','12'); cube.setAttribute('height','12'); cube.setAttribute('depth','12');
+  cube.setAttribute('position','0 6 0');
+  cube.setAttribute('material','color:#00ffff; opacity:0.95; shader:flat; side:double');
+  cube.setAttribute('animation','property: rotation; to:0 360 0; loop:true; dur:9000; easing:linear');
 
-    const cube = document.createElement('a-box');
-    cube.setAttribute('width','6'); cube.setAttribute('height','6'); cube.setAttribute('depth','6');
-    cube.setAttribute('position','0 3 0');
-    cube.setAttribute('material','color:#00ffff; opacity:0.95; shader:flat; side: double');
-    cube.setAttribute('animation','property: rotation; to: 0 360 0; loop: true; dur: 10000; easing: linear');
+  // Leuchtsäule
+  const beam=document.createElement('a-cylinder');
+  beam.setAttribute('radius','1');
+  beam.setAttribute('height','24');
+  beam.setAttribute('position','0 12 0');
+  beam.setAttribute('material','color:#00ffff; opacity:0.28; transparent:true; side:double');
 
-    const ring = document.createElement('a-ring');
-    ring.setAttribute('radius-inner','3.2'); ring.setAttribute('radius-outer','3.8');
-    ring.setAttribute('position','0 0 0.02');
-    ring.setAttribute('material','color:#00ffff; shader:flat; opacity:0.95; transparent:true; side: double');
-    ring.setAttribute('animation__pulse','property=scale; to=1.06 1.06 1; dir=alternate; dur:800; loop:true; easing=easeInOutSine');
+  // Bild
+  const img=document.createElement('a-image');
+  img.setAttribute('src',d.img||IMG_SRC);
+  img.setAttribute('scale','34 25.5 1');
+  img.setAttribute('position','0 15 0');
+  img.setAttribute('look-at','[gps-camera]');
+  img.setAttribute('material','shader:flat; opacity:1; side:double');
 
-    const label = document.createElement('a-text');
-    label.setAttribute('value', t.name);
-    label.setAttribute('color', '#00ffff');
-    label.setAttribute('position', '0 7 0.02');
-    label.setAttribute('width', '12');
-    label.setAttribute('align', 'center');
-    label.setAttribute('look-at', '[gps-camera]');
+  // Bodenring
+  const ring=document.createElement('a-ring');
+  ring.setAttribute('radius-inner','3.2');
+  ring.setAttribute('radius-outer','3.8');
+  ring.setAttribute('position','0 0 0.02');
+  ring.setAttribute('material','color:#00ffff; opacity:0.95; shader:flat; side:double');
 
-    holder.appendChild(bg);
-    holder.appendChild(cube);
-    holder.appendChild(ring);
-    holder.appendChild(label);
-    scene.appendChild(holder);
+  el.appendChild(cube);
+  el.appendChild(beam);
+  el.appendChild(img);
+  el.appendChild(ring);
+
+  sceneEl.appendChild(el);
+}
+
+/*** Firestore laden ***/
+async function loadRemoteSpots(){
+  const snap=await getDocs(collection(db,'spots'));
+  REMOTE_TARGETS=snap.docs.map(d=>({name:d.data().name,img:d.data().img,lat:d.data().lat,lon:d.data().lon}));
+}
+
+/*** Camera + Sensor ***/
+async function ensureCameraAndMotion(){
+  await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+  try{
+    if(typeof DeviceMotionEvent?.requestPermission==='function'){ await DeviceMotionEvent.requestPermission().catch(()=>{});}
+    if(typeof DeviceOrientationEvent?.requestPermission==='function'){ await DeviceOrientationEvent.requestPermission().catch(()=>{});}
+  }catch(e){}
+}
+
+/*** GPS ***/
+function getOnceLocation(){
+  return new Promise((res,rej)=>{
+    navigator.geolocation.getCurrentPosition(res,e=>rej(new Error(e.message)),{enableHighAccuracy:true,timeout:15000,maximumAge:0});
   });
-
-  // HUD: Distanz/Richtung zum NÄCHSTEN Spot und Pfeil
-  ensureGeoWatch(coords=>{
-    const { latitude, longitude, accuracy } = coords;
-    const list = TARGETS.map(t=>{
-      const d = distM(latitude, longitude, t.lat, t.lon);
-      const brg = bearing(latitude, longitude, t.lat, t.lon);
-      return { t, d, brg };
-    }).sort((a,b)=>a.d-b.d);
-
-    const nearest = list[0];
-    const text = nearest.d>=1000 ? (nearest.d/1000).toFixed(2)+' km' : Math.round(nearest.d)+' m';
-    distEl.textContent = `🎯 ${nearest.t.name} • Entfernung: ${text} • GPS ±${Math.round(accuracy)} m`;
-
-    if (deviceHeadingDeg!=null){
-      const turn=((nearest.brg - deviceHeadingDeg)+360)%360;
-      arrowEl.style.transform=`rotate(${turn}deg)`;
-    }
+}
+function ensureGeoWatch(){
+  return new Promise((resolve,reject)=>{
+    navigator.geolocation.getCurrentPosition(p=>{
+      if(geoWatchId!=null) navigator.geolocation.clearWatch(geoWatchId);
+      geoWatchId=navigator.geolocation.watchPosition(
+        pos=>updateHud(pos.coords),
+        err=>statusEl.textContent='GPS-Fehler: '+err.message,
+        {enableHighAccuracy:true,timeout:20000,maximumAge:0});
+      updateHud(p.coords); resolve();
+    },err=>reject(err),{enableHighAccuracy:true,timeout:15000,maximumAge:0});
   });
-});
+}
+
+/*** HUD ***/
+function updateHud(coords){
+  const all=[...BASE_TARGETS,...REMOTE_TARGETS];
+  if(!all.length) return;
+  const {latitude,longitude,accuracy}=coords;
+  const nearest=all.map(t=>({t,d:distM(latitude,longitude,t.lat,t.lon),brg:bearing(latitude,longitude,t.lat,t.lon)}))
+                   .sort((a,b)=>a.d-b.d)[0];
+  nearestNameEl.textContent=nearest.t.name;
+  const txt=nearest.d>=1000?(nearest.d/1000).toFixed(2)+' km':Math.round(nearest.d)+' m';
+  distEl.textContent=`Entfernung: ${txt} · GPS ±${Math.round(accuracy)} m`;
+  if(deviceHeadingDeg!=null){ const turn=((nearest.brg-deviceHeadingDeg)+360)%360; arrowEl.style.transform=`rotate(${turn}deg)`; }
+}
+
+/*** Kompass ***/
+function startHeadingListeners(){
+  window.addEventListener('deviceorientation',e=>{
+    if(typeof e.webkitCompassHeading==='number'){deviceHeadingDeg=e.webkitCompassHeading;}
+    else if(e.absolute===true&&typeof e.alpha==='number'){deviceHeadingDeg=360-e.alpha;}
+  },true);
+}
+const toRad=d=>d*Math.PI/180,toDeg=r=>r*180/Math.PI;
+function distM(la1,lo1,la2,lo2){const R=6371e3,dLa=toRad(la2-la1),dLo=toRad(lo2-lo1);const a=Math.sin(dLa/2)**2+Math.cos(toRad(la1))*Math.cos(toRad(la2))*Math.sin(dLo/2)**2;return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));}
+function bearing(la1,lo1,la2,lo2){const φ1=toRad(la1),φ2=toRad(la2),λ1=toRad(lo1),λ2=toRad(lo2);const y=Math.sin(λ2-λ1)*Math.cos(φ2);const x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1);return(toDeg(Math.atan2(y,x))+360)%360;}
 </script>
 </body>
 </html>
