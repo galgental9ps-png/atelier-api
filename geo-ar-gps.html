@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>WebAR – Bild sofort mit Fallback</title>
+<title>WebAR – Bild 1,2 m vor der Kamera (ohne Geo)</title>
 
 <!-- A-Frame + AR.js -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
@@ -12,7 +12,7 @@
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,Segoe UI,Inter,Roboto,sans-serif}
   #overlay{position:fixed;inset:0;display:grid;place-items:center;background:#000c;z-index:10;text-align:center;padding:16px}
-  .btn{padding:12px 14px;border:0;border-radius:12px;font-weight:800;color:#fff;background:#0ea5e9;cursor:pointer}
+  .btn{padding:12px 16px;border:0;border-radius:12px;font-weight:800;color:#fff;background:#0ea5e9;cursor:pointer}
   #status{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);background:#000d;padding:8px 12px;border-radius:10px;z-index:5;font-weight:700}
 </style>
 </head>
@@ -22,8 +22,8 @@
   <div>
     <h1 style="margin:0 0 10px">AR starten</h1>
     <p style="opacity:.9;max-width:560px;margin:0 auto 14px">
-      Erlaube <b>Kamera</b> (und auf iOS zusätzlich <b>Bewegung</b>).<br>
-      Dein Bild wird zuerst versucht. Falls es nicht lädt, erscheint automatisch ein <b>Fallback-Bild</b>.
+      Erlaube <b>Kamera</b> (auf iOS ggf. zusätzlich <b>Bewegung</b>).
+      Das Bild erscheint <b>sofort</b> ca. 1,2 m vor der Kamera.
     </p>
     <button id="start" class="btn">Los geht’s</button>
   </div>
@@ -33,32 +33,26 @@
 <div id="mount"></div>
 
 <script>
-/*** KONFIG ***/
-// 1) DEIN BILD (kann fehlschlagen)
-const IMG_SRC_PRIMARY  = "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg";
-// 2) FALLBACK (sehr zuverlässig, Wikimedia)
-const IMG_SRC_FALLBACK = "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg";
+/* ===== Konfig ===== */
+const IMG_PRIMARY  = "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg"; // dein Bild
+const IMG_FALLBACK = "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg"; // immer verfügbar
+const SIZE_M = { w: 1.6, h: 1.2 }; // Größe in Metern
+const DIST_M = 1.2;                // Abstand vor der Kamera
 
-// Größe & Abstand
-const SIZE_M = { w: 1.6, h: 1.2 };
-const DIST_M = 1.2;
-
-/*** UI & STATE ***/
+/* ===== UI/State ===== */
 const overlay = document.getElementById('overlay');
 const statusEl = document.getElementById('status');
 const mount = document.getElementById('mount');
 let sceneEl, camEl, boardEl;
 
-/*** START ***/
 document.getElementById('start').addEventListener('click', startAR);
 
 async function startAR(){
   try{
-    await askPermissions();
-    ensureScene();
-    await sceneLoaded();
-
-    await buildBoardWithFallback();  // Bild + Fallback sicher aufbauen
+    await ensurePermissions();
+    buildScene();
+    await onSceneLoaded();
+    await buildBoard();   // Bild direkt vor die Kamera
     overlay.style.display='none';
     status("AR aktiv – Bild sollte sichtbar sein.");
   }catch(e){
@@ -66,29 +60,29 @@ async function startAR(){
   }
 }
 
-/*** PERMISSIONS ***/
-async function askPermissions(){
+/* ===== Permissions ===== */
+async function ensurePermissions(){
   // Kamera
   await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
   // iOS Bewegung (best effort)
   try{
-    if (typeof DeviceMotionEvent?.requestPermission === 'function') { await DeviceMotionEvent.requestPermission().catch(()=>{}); }
-    if (typeof DeviceOrientationEvent?.requestPermission === 'function') { await DeviceOrientationEvent.requestPermission().catch(()=>{}); }
+    if (typeof DeviceMotionEvent?.requestPermission === 'function') await DeviceMotionEvent.requestPermission().catch(()=>{});
+    if (typeof DeviceOrientationEvent?.requestPermission === 'function') await DeviceOrientationEvent.requestPermission().catch(()=>{});
   }catch{}
 }
 
-/*** SCENE ***/
-function ensureScene(){
+/* ===== Scene ===== */
+function buildScene(){
   if (sceneEl) return;
-  // Wir preladen beide Bilder in a-assets (mit Cachebustern)
   mount.innerHTML = `
     <a-scene embedded vr-mode-ui="enabled:false"
       renderer="antialias:true; alpha:true"
       arjs="sourceType: webcam; videoTexture:true; facingMode: environment; trackingMethod: best; debugUIEnabled:false">
 
+      <!-- Beide Bilder vorladen (mit Cachebuster) -->
       <a-assets timeout="15000" crossorigin="anonymous">
-        <img id="imgPrimary"  src="${IMG_SRC_PRIMARY}?v=${Date.now()}"  crossorigin="anonymous">
-        <img id="imgFallback" src="${IMG_SRC_FALLBACK}?v=${Date.now()}" crossorigin="anonymous">
+        <img id="imgPrimary"  src="${IMG_PRIMARY}?v=${Date.now()}"  crossorigin="anonymous">
+        <img id="imgFallback" src="${IMG_FALLBACK}?v=${Date.now()}" crossorigin="anonymous">
       </a-assets>
 
       <a-entity id="rig">
@@ -98,47 +92,42 @@ function ensureScene(){
   sceneEl = document.querySelector('a-scene');
   camEl   = document.getElementById('cam');
 }
-function sceneLoaded(){
+function onSceneLoaded(){
   return new Promise(res=>{
     if (sceneEl.hasLoaded) return res();
     sceneEl.addEventListener('loaded', res, { once:true });
   });
 }
 
-/*** BOARD MIT FALLBACK ***/
-async function buildBoardWithFallback(){
+/* ===== Billboard (Bild vor Kamera) ===== */
+async function buildBoard(){
   if (boardEl) return;
 
-  // Ladeversuche prüfen
-  const primary = document.getElementById('imgPrimary');
-  const fallback= document.getElementById('imgFallback');
-
-  const primaryOk = await imageOK(primary);
-  let srcId = primaryOk ? '#imgPrimary' : '#imgFallback';
-  status(primaryOk ? "Dein Bild geladen." : "Dein Bild fehlgeschlagen – Fallback geladen.");
+  const ok = await imageOk(document.getElementById('imgPrimary'));
+  const srcId = ok ? '#imgPrimary' : '#imgFallback';
+  status(ok ? "Dein Bild geladen." : "Dein Bild fehlgeschlagen – Fallback angezeigt.");
 
   boardEl = document.createElement('a-entity');
-  boardEl.setAttribute('position', `0 0 ${-DIST_M}`);
+  boardEl.setAttribute('position', `0 0 ${-DIST_M}`); // vor der Kamera
+  boardEl.setAttribute('visible', 'true');
 
-  // Rahmen
+  // Rahmen (leicht, damit man’s sieht)
   const frame = document.createElement('a-plane');
-  frame.setAttribute('width', SIZE_M.w + 0.08);
+  frame.setAttribute('width',  SIZE_M.w + 0.08);
   frame.setAttribute('height', SIZE_M.h + 0.08);
   frame.setAttribute('position','0 0 -0.02');
-  frame.setAttribute('material', 'shader: flat; color:#00ffff; opacity:.16; transparent:true; side:double');
+  frame.setAttribute('material','shader: flat; color:#00ffff; opacity:.16; transparent:true; side:double');
 
   // Bild
   const img = document.createElement('a-image');
   img.setAttribute('src', srcId);
-  img.setAttribute('width', SIZE_M.w);
+  img.setAttribute('width',  SIZE_M.w);
   img.setAttribute('height', SIZE_M.h);
 
-  // Falls Primary später doch lädt (z.B. langsames CDN), kannst du automatisch umschalten:
-  if (!primaryOk) {
-    primary.addEventListener('load', ()=>{
-      img.setAttribute('src', '#imgPrimary');
-      status("Dein Bild ist nachgeladen – Fallback ersetzt.");
-    }, { once:true });
+  // Wenn Primary später doch lädt, automatisch auf Primary umschalten
+  if (!ok){
+    const prim = document.getElementById('imgPrimary');
+    prim.addEventListener('load', ()=>{ img.setAttribute('src', '#imgPrimary'); status("Dein Bild nachgeladen – Fallback ersetzt."); }, { once:true });
   }
 
   boardEl.appendChild(frame);
@@ -146,7 +135,7 @@ async function buildBoardWithFallback(){
   camEl.appendChild(boardEl);
 }
 
-function imageOK(imgEl){
+function imageOk(imgEl){
   return new Promise(resolve=>{
     if (imgEl.complete && imgEl.naturalWidth>0) return resolve(true);
     const onLoad  = ()=>{ cleanup(); resolve(true); };
@@ -154,12 +143,11 @@ function imageOK(imgEl){
     function cleanup(){ imgEl.removeEventListener('load', onLoad); imgEl.removeEventListener('error', onError); }
     imgEl.addEventListener('load', onLoad);
     imgEl.addEventListener('error', onError);
-    // Timeout, falls weder load/error gefeuert wird (schlechte Netze)
     setTimeout(()=>{ cleanup(); resolve(imgEl.complete && imgEl.naturalWidth>0); }, 6000);
   });
 }
 
-/*** STATUS ***/
+/* ===== Status ===== */
 function status(msg){ statusEl.textContent = msg; console.log(msg); }
 </script>
 </body>
