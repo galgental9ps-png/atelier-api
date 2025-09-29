@@ -3,105 +3,298 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>AR.js Diagnose – Sensorfix + Würfel</title>
+<title>Pseudo-AR Geo Navigator (mit Firebase)</title>
 
-<!-- A-Frame & AR.js -->
+<!-- A-Frame (ohne AR.js) -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
+
+<!-- Firebase SDK (ESM) -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+  import { getFirestore, collection, addDoc, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+
+  // 🔑 Deine Firebase Konfiguration
+  const firebaseConfig = {
+    apiKey: "AIzaSyAd4_0zLdbI6jkjcZZUtMSWCYKP14dGHzQ",
+    authDomain: "geo-ar-2c66d.firebaseapp.com",
+    projectId: "geo-ar-2c66d",
+    storageBucket: "geo-ar-2c66d.appspot.com",
+    messagingSenderId: "232770478087",
+    appId: "1:232770478087:web:d0d6cb8a585bdef5fdcaa2"
+  };
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+  window._db = db; window._fs = {collection, addDoc, getDocs, serverTimestamp};
+</script>
 
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,Inter,Roboto}
-  #ui{position:fixed;inset:auto 0 0 0;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;background:#000c;padding:10px;z-index:20}
-  .btn{padding:10px 14px;border:0;border-radius:12px;font-weight:800;color:#fff;background:#0ea5e9}
-  .warn{background:#f59e0b} .ok{background:#10b981}
-  #diag{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:20;background:#000a;padding:8px 12px;border-radius:10px;font-size:13px;white-space:pre-line;text-align:center}
+  /* Vollbild-Kamera-Video */
+  #videoBg{position:fixed;inset:0;object-fit:cover;width:100%;height:100%;z-index:0;background:#000}
+  /* UI */
+  #overlay{position:fixed;inset:0;display:grid;place-items:center;background:#000b;z-index:10;text-align:center;padding:16px}
+  .btn{padding:12px 14px;border:0;border-radius:12px;font-weight:800;color:#fff;background:#0ea5e9;margin:0 6px;cursor:pointer}
+  #status{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);background:#000a;padding:8px 12px;border-radius:10px;z-index:9;font-weight:700}
+  #hud{position:fixed;top:84px;left:50%;transform:translateX(-50%);z-index:9;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
+  #arrow{width:96px;height:96px;filter:drop-shadow(0 0 8px #00ffff);transition:transform 80ms linear}
+  #dist{font-size:18px;font-weight:900;background:#000a;padding:8px 12px;border-radius:999px}
+  #corner{position:fixed;top:12px;right:12px;z-index:9;display:flex;gap:8px;align-items:center}
+  .chip{background:#000a;border:1px solid #1f2937;color:#fff;padding:8px 10px;border-radius:10px;font-size:12px}
+  #leftBtns{position:fixed;top:12px;left:12px;z-index:9;display:flex;gap:8px;flex-wrap:wrap}
+  #routeBtn{background:#10b981}
+  /* A-Frame Szene liegt über dem Video */
+  a-scene{position:fixed;inset:0;z-index:1;pointer-events:none}
 </style>
 </head>
 <body>
 
-<div id="diag">Bereit…\n1) Tippe „Kamera starten“\n2) Dann „Sensor erlauben (iOS/Android)“\n3) Danach „AR starten“ – ein riesiger Würfel sollte direkt vor dir erscheinen.</div>
+<!-- Kamera-Hintergrund -->
+<video id="videoBg" autoplay playsinline muted></video>
 
-<div id="ui">
-  <button id="cam" class="btn">Kamera starten</button>
-  <button id="sens" class="btn warn">Sensor erlauben (iOS/Android)</button>
-  <button id="go" class="btn ok">AR starten</button>
+<!-- A-Frame Szene (ohne AR.js) -->
+<a-scene embedded renderer="antialias:true; alpha:true" background="transparent">
+  <!-- Lichter für sichtbare Materialien -->
+  <a-entity light="type:ambient; intensity:1"></a-entity>
+  <a-entity light="type:directional; intensity:0.6" position="1 2 1"></a-entity>
+
+  <!-- Gruppe, die relativ zur Kamera ausgerichtet wird -->
+  <a-entity id="targetGroup" position="0 0 -10">
+    <!-- Leucht-Säule -->
+    <a-cylinder id="beam" radius="0.8" height="18" position="0 9 0"
+      material="color:#00ffff; opacity:0.28; transparent:true; side:double"
+      animation__fade="property=material.opacity; dir=alternate; to:0.45; dur:1400; loop:true; easing=easeInOutSine"></a-cylinder>
+
+    <!-- Riesenwürfel (6m) -->
+    <a-box id="cube" width="6" height="6" depth="6" position="0 3 0"
+      material="color:#00ffff; opacity:0.95; shader:flat; side:double"
+      animation__rot="property=rotation; to:0 360 0; loop:true; dur:12000; easing=linear"></a-box>
+
+    <!-- Bodenring -->
+    <a-ring radius-inner="3.0" radius-outer="3.6" position="0 0.15 0" rotation="-90 0 0"
+      material="color:#00ffff; shader:flat; opacity:0.95; transparent:true"
+      animation__pulse="property=scale; to=1.08 1.08 1; dir=alternate; dur:800; loop:true; easing=easeInOutSine"></a-ring>
+
+    <!-- Label -->
+    <a-text id="label" value="Spot" color="#00ffff" position="0 7 0" width="8" align="center"></a-text>
+  </a-entity>
+
+  <!-- Kamera (nur für A-Frame Controls, nicht für echtes AR) -->
+  <a-entity position="0 1.6 0">
+    <a-camera wasd-controls-enabled="false" look-controls="touchEnabled:true; mouseEnabled:false"></a-camera>
+  </a-entity>
+</a-scene>
+
+<!-- UI -->
+<div id="overlay">
+  <div>
+    <h1 style="margin:0 0 8px">Pseudo-AR Geo Navigator</h1>
+    <p style="opacity:.9;max-width:640px;margin:0 auto 14px">
+      Zeigt dir einen <b>riesigen Beacon</b> in <u>Richtung des nächsten Spots</u> vor die Kamera – ganz ohne AR.js.<br>
+      <b>Spot setzen</b> speichert deinen Standort (PW: <code>1234</code>) in Firestore.
+    </p>
+    <button id="start" class="btn">Los geht’s</button>
+    <button id="setSpot" class="btn" style="background:#ef4444">Spot setzen (Admin)</button>
+  </div>
 </div>
 
-<div id="mount"></div>
+<div id="leftBtns">
+  <button id="routeBtn" class="btn" disabled>Route (Maps)</button>
+</div>
 
-<script>
-let camOK=false, sensOK=false, headingDeg=null;
+<div id="corner">
+  <div class="chip">🎯 Nächster Spot: <span id="nearestName">–</span></div>
+</div>
 
-const diag = document.getElementById('diag');
-const mount = document.getElementById('mount');
+<div id="hud">
+  <svg id="arrow" viewBox="0 0 100 100" aria-label="Richtung zum Spot">
+    <polygon points="50,5 80,55 60,55 60,95 40,95 40,55 20,55" fill="#00ffff" opacity="0.95"/>
+  </svg>
+  <div id="dist">Entfernung: –</div>
+</div>
 
-function log(msg){
-  diag.textContent = (diag.textContent.split('\n')[0] || 'Status:') + "\n" + msg +
-    `\nHeading: ${headingDeg!=null ? headingDeg.toFixed(0)+'°' : '–'}`;
+<div id="status">Bereit…</div>
+
+<script type="module">
+/* Firebase Handles */
+const { collection, addDoc, getDocs, serverTimestamp } = window._fs;
+const db = window._db;
+
+/* UI Refs */
+const overlay  = document.getElementById('overlay');
+const statusEl = document.getElementById('status');
+const videoBg  = document.getElementById('videoBg');
+const arrowEl  = document.getElementById('arrow');
+const distEl   = document.getElementById('dist');
+const nearestNameEl = document.getElementById('nearestName');
+const routeBtn = document.getElementById('routeBtn');
+const targetGroup = document.getElementById('targetGroup');
+const labelEl  = document.getElementById('label');
+
+/* Bildquelle falls du später Textur willst */
+// const IMG_SRC = "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg";
+
+/* Feste Spots (deine) + Remote */
+const BASE_TARGETS = [
+  { name: 'Altstadt-Spot',         lat: 48.366184, lon: 10.867701 },
+  { name: 'Stettenstraße 7',       lat: 48.368905, lon: 10.898445 },
+  { name: 'Neuer Spot',            lat: 48.36630,  lon: 10.86781  },
+  { name: 'Gabelsbergerstraße 64', lat: 48.33598,  lon: 10.86728  }
+];
+let REMOTE_TARGETS = [];
+let currentNearest = null;
+let deviceHeadingDeg = null;
+let geoWatchId = null;
+
+/* Start */
+document.getElementById('start').addEventListener('click', startApp);
+document.getElementById('setSpot').addEventListener('click', setSpotAdmin);
+routeBtn.addEventListener('click', openRoute);
+
+async function startApp(){
+  overlay.style.display='none';
+  await startCameraBg();
+  startHeadingListeners();
+  await ensureGeoWatch();
+  // Lade Remote Spots
+  await loadRemoteSpots();
+  statusEl.textContent = 'Bereit. Bewege dich/rotiere leicht, der Beacon zeigt zum nächsten Spot.';
 }
 
-// 1) Kamera
-document.getElementById('cam').addEventListener('click', async ()=>{
+async function setSpotAdmin(){
+  const pw = prompt('Admin-Passwort:');
+  if(pw!=='1234'){ alert('Falsches Passwort'); return; }
+  if(!('geolocation' in navigator)){ alert('Geolocation nicht unterstützt'); return; }
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    try{
+      await addDoc(collection(db,'spots'),{
+        name:'Echo der Gedanken',
+        lat: Number(pos.coords.latitude.toFixed(6)),
+        lon: Number(pos.coords.longitude.toFixed(6)),
+        createdAt: serverTimestamp()
+      });
+      alert('Spot gespeichert! Beim nächsten Start sichtbar.');
+    }catch(e){ alert('Fehler: '+e.message); }
+  }, err=>alert('Standortfehler: '+err.message), {enableHighAccuracy:true});
+}
+
+/* Kamera-Hintergrund */
+async function startCameraBg(){
   try{
-    await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
-    camOK = true; log('Kamera: OK');
+    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}, audio:false});
+    videoBg.srcObject = stream;
   }catch(e){
-    log('Kamera FEHLER: '+e.message);
+    alert('Kamera kann nicht gestartet werden: '+e.message);
   }
-});
+}
 
-// 2) Sensorpermission iOS/Android
-document.getElementById('sens').addEventListener('click', async ()=>{
+/* Heading / Kompass */
+function startHeadingListeners(){
+  // iOS Permission Dialog ggf. erforderlich – iOS: Einstellungen > Safari > Bewegung & Orientierung
   try{
-    const reqs = [];
-    if (typeof DeviceMotionEvent?.requestPermission === 'function'){
-      reqs.push(DeviceMotionEvent.requestPermission().catch(()=>{}));
-    }
-    if (typeof DeviceOrientationEvent?.requestPermission === 'function'){
-      reqs.push(DeviceOrientationEvent.requestPermission().catch(()=>{}));
-    }
-    await Promise.all(reqs);
+    if (typeof DeviceMotionEvent?.requestPermission === 'function'){ DeviceMotionEvent.requestPermission().catch(()=>{}); }
+    if (typeof DeviceOrientationEvent?.requestPermission === 'function'){ DeviceOrientationEvent.requestPermission().catch(()=>{}); }
   }catch(e){}
-  // Heading-Listener
   window.addEventListener('deviceorientation', e=>{
-    if (typeof e?.webkitCompassHeading === 'number'){
-      headingDeg = e.webkitCompassHeading; // iOS
-    } else if (e?.absolute === true && typeof e?.alpha === 'number'){
-      headingDeg = 360 - e.alpha; // Android (ungefähr)
+    if (typeof e.webkitCompassHeading === 'number'){
+      deviceHeadingDeg = e.webkitCompassHeading;
+    }else if (e.absolute === true && typeof e.alpha === 'number'){
+      deviceHeadingDeg = 360 - e.alpha;
     }
-    sensOK = headingDeg!=null && !Number.isNaN(headingDeg);
-    log('Sensor: ' + (sensOK ? 'OK' : 'wartet…') + (headingDeg!=null?` (≈${headingDeg.toFixed(0)}°)`:'' ));
   }, true);
-  log('Sensor angefragt – falls iOS: Safari-Einstellungen → „Bewegung & Orientierung“ aktivieren!');
-});
+}
 
-// 3) AR starten (nur wenn Kamera + Sensor vorhanden)
-document.getElementById('go').addEventListener('click', ()=>{
-  if(!camOK){ log('Erst „Kamera starten“ tippen.'); return; }
-  // Hinweis: Manche Androids liefern heading erst nach Bewegung – Handy leicht kippen.
-  mount.innerHTML = `
-    <a-scene
-      embedded
-      renderer="antialias:true; alpha:true"
-      vr-mode-ui="enabled:false"
-      arjs="sourceType: webcam; videoTexture:true; trackingMethod: best; debugUIEnabled: true;">
+/* GPS Watch + HUD Update */
+async function ensureGeoWatch(){
+  if(!('geolocation' in navigator)) throw new Error('Geolocation nicht unterstützt');
+  return new Promise((resolve,reject)=>{
+    navigator.geolocation.getCurrentPosition(p=>{
+      updateHud(p.coords);
+      if(geoWatchId!=null) navigator.geolocation.clearWatch(geoWatchId);
+      geoWatchId = navigator.geolocation.watchPosition(
+        pos=>updateHud(pos.coords),
+        err=>{ statusEl.textContent='GPS-Fehler: '+err.message; },
+        { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
+      );
+      resolve();
+    },err=>reject(err),{ enableHighAccuracy:true, timeout:15000, maximumAge:0 });
+  });
+}
 
-      <!-- WICHTIG: große Near/Far, damit nichts rausgeclippt wird -->
-      <a-camera near="0.01" far="100000"></a-camera>
+/* Firestore laden */
+async function loadRemoteSpots(){
+  try{
+    const snap = await getDocs(collection(db,'spots'));
+    REMOTE_TARGETS = snap.docs.map(d=>{
+      const x=d.data(); return { name:x.name||'Spot', lat:x.lat, lon:x.lon };
+    });
+    statusEl.textContent = `Spots geladen: ${REMOTE_TARGETS.length + BASE_TARGETS.length}`;
+  }catch(e){
+    statusEl.textContent = 'Spots laden fehlgeschlagen: '+e.message;
+  }
+}
 
-      <!-- RIESEN-WÜRFEL 1 m vor dir -->
-      <a-box position="0 0 -1"
-             width="4" height="4" depth="4"
-             material="color:#00ffff; opacity:0.95; shader:flat"
-             animation="property=rotation; to:0 360 0; loop:true; dur:6000; easing=linear"></a-box>
+/* HUD / Beacon-Ausrichtung (Pseudo-AR) */
+function updateHud(coords){
+  const all=[...BASE_TARGETS, ...REMOTE_TARGETS];
+  if(!all.length) return;
 
-      <!-- zweiter, halbdurchsichtiger Würfel 2.5 m vor dir -->
-      <a-box position="0 0 -2.5"
-             width="8" height="8" depth="8"
-             material="color:#ff00ff; opacity:0.35; shader:flat"></a-box>
-    </a-scene>`;
-  log('AR Szene gestartet. Siehst du die Würfel? Falls nicht: Sensorrechte / Safari-Einstellung prüfen.');
-});
+  const { latitude, longitude, accuracy } = coords;
+  const entries = all.map(t=>{
+    const d = distM(latitude, longitude, t.lat, t.lon);
+    const brg = bearing(latitude, longitude, t.lat, t.lon);
+    return {t,d,brg};
+  }).sort((a,b)=>a.d-b.d);
+
+  const nearest = entries[0];
+  currentNearest = nearest.t;
+
+  // HUD
+  nearestNameEl.textContent = nearest.t.name || 'Spot';
+  const txt = nearest.d>=1000 ? (nearest.d/1000).toFixed(2)+' km' : Math.round(nearest.d)+' m';
+  distEl.textContent = `Entfernung: ${txt} · GPS ±${Math.round(accuracy)} m`;
+  routeBtn.disabled = false;
+
+  // Pfeil drehen (Kompass)
+  if (deviceHeadingDeg!=null){
+    const turn=((nearest.brg - deviceHeadingDeg)+360)%360;
+    arrowEl.style.transform=`rotate(${turn}deg)`;
+  }
+
+  // 🎯 Pseudo-AR Platzierung:
+  // Wir drehen die Zielgruppe horizontal um die Y-Achse relativ zur Kamera,
+  // so dass sie in Richtung des Bearings zeigt. Distanz: 10 m.
+  const turnY = (deviceHeadingDeg!=null)
+    ? ((nearest.brg - deviceHeadingDeg)+360)%360
+    : nearest.brg; // falls kein Kompass, immerhin grob Nordenbasiert
+  targetGroup.setAttribute('rotation', `0 ${turnY} 0`);
+  targetGroup.setAttribute('position', '0 0 -10'); // 10 m „vor“ Blickrichtung
+  labelEl.setAttribute('value', nearest.t.name || 'Spot');
+
+  statusEl.textContent = `Kurs: ${nearest.brg.toFixed(0)}° · Heading: ${deviceHeadingDeg!=null?deviceHeadingDeg.toFixed(0)+'°':'–'} · Distanz: ${txt}`;
+}
+
+/* Route öffnen */
+function openRoute(){
+  if(!currentNearest) return;
+  const { lat, lon } = currentNearest;
+  const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=walking`;
+  window.open(url, '_blank');
+}
+
+/* Geo-Hilfen */
+const toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
+function distM(la1,lo1,la2,lo2){
+  const R=6371e3, dLa=toRad(la2-la1), dLo=toRad(lo2-lo1);
+  const a=Math.sin(dLa/2)**2+Math.cos(toRad(la1))*Math.cos(toRad(la2))*Math.sin(dLo/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+function bearing(la1,lo1,la2,lo2){
+  const φ1=toRad(la1), φ2=toRad(la2), λ1=toRad(lo1), λ2=toRad(lo2);
+  const y=Math.sin(λ2-λ1)*Math.cos(φ2);
+  const x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*cos(φ2)*Math.cos(λ2-λ1);
+  return (toDeg(Math.atan2(y,x))+360)%360;
+}
+function cos(x){ return Math.cos(x); }
 </script>
 </body>
 </html>
