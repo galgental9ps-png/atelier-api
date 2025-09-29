@@ -3,67 +3,61 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Geo-AR – Echo der Gedanken</title>
+<title>Geo-AR mit HUD & Firebase</title>
 
 <!-- A-Frame + AR.js -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
 
-<!-- Firebase (Compat CDN) -->
-<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<!-- Firebase (ESM) -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+  import { getFirestore, collection, addDoc, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAd4_0zLdbI6jkjcZZUtMSWCYKP14dGHzQ",
+    authDomain: "geo-ar-2c66d.firebaseapp.com",
+    projectId: "geo-ar-2c66d",
+    storageBucket: "geo-ar-2c66d.appspot.com",
+    messagingSenderId: "232770478087",
+    appId: "1:232770478087:web:d0d6cb8a585bdef5fdcaa2"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  window._db = db;
+  window._fs = { collection, addDoc, getDocs, serverTimestamp };
+</script>
 
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;
-    font-family:-apple-system,system-ui,Segoe UI,Inter,Roboto,sans-serif}
+    font-family:system-ui, -apple-system, Segoe UI, Inter, Roboto, sans-serif}
   #overlay{position:fixed;inset:0;display:grid;place-items:center;
-    background:linear-gradient(#000c,#000c);z-index:10;text-align:center;padding:16px}
+    background:#000c;z-index:10;text-align:center;padding:16px}
   .btn{padding:12px 14px;border:0;border-radius:12px;font-weight:800;color:#fff;background:#0ea5e9;margin:0 6px;cursor:pointer}
   #status{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);
     background:#000d;padding:10px 14px;border-radius:10px;z-index:5;white-space:nowrap;font-weight:700}
   /* HUD */
-  #hud{position:fixed;top:88px;left:50%;transform:translateX(-50%);
+  #hud{position:fixed;top:84px;left:50%;transform:translateX(-50%);
     z-index:6;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
   #arrow{width:96px;height:96px;filter:drop-shadow(0 0 8px #00ffff);transition:transform 80ms linear}
   #dist{font-size:18px;font-weight:900;background:#000c;padding:8px 12px;border-radius:999px}
   #corner{position:fixed;top:12px;right:12px;z-index:7;display:flex;gap:8px;align-items:center}
   .chip{background:#000d;border:1px solid #1f2937;color:#fff;padding:8px 10px;border-radius:10px;font-size:12px}
-  /* Diagnose-Bar */
-  #diag{position:fixed;top:0;left:0;right:0;z-index:8;display:flex;flex-wrap:wrap;gap:6px;padding:8px;
-    background:#0b1220cc;border-bottom:1px solid #1f2937}
-  .pill{font-size:12px;border-radius:999px;padding:6px 10px;border:1px solid #374151}
-  .ok{color:#10b981;border-color:#10b981;}
-  .warn{color:#f59e0b;border-color:#f59e0b;}
-  .bad{color:#ef4444;border-color:#ef4444;}
 </style>
 </head>
 <body>
-
-<!-- Diagnose-Leiste -->
-<div id="diag">
-  <span id="httpsPill" class="pill">HTTPS: prüfen…</span>
-  <span id="fbPill" class="pill">Firebase: prüfen…</span>
-  <span id="camPill" class="pill">Kamera: prüfen…</span>
-  <span id="sensPill" class="pill">Sensor: prüfen…</span>
-  <span id="geoPill" class="pill">Standort: prüfen…</span>
-  <span id="headPill" class="pill">Heading: –</span>
-  <span id="posPill" class="pill">Pos: –</span>
-</div>
 
 <div id="overlay">
   <div>
     <h1 style="margin:0 0 8px">Geo-AR starten</h1>
     <p style="opacity:.9;max-width:640px;margin:0 auto 14px">
-      Erlaube <b>Kamera</b>. Bei iOS: <b>Bewegungssensor</b> zustimmen. Für Geo-Spots zusätzlich <b>Standort</b> erlauben.<br>
-      <b>Tipp:</b> „Hier testen“ zeigt sofort einen Beacon 1&nbsp;m vor dir (ohne Standort).
+      Erlaube <b>Kamera</b>, <b>Standort</b> und ggf. <b>Bewegungssensor</b> (iOS).<br>
+      <b>Los geht’s</b> zeigt Spots + HUD mit Richtung & Entfernung.<br>
+      <b>Spot setzen</b> speichert deinen Standort als neuen Spot (PW: <code>1234</code>).
     </p>
-    <button id="start" class="btn">Los geht’s (Geo-Spots)</button>
-    <button id="spawnHere" class="btn" style="background:#10b981">Hier testen (1 m vor dir)</button>
-    <button id="askGeo" class="btn" style="background:#f59e0b">Standort erlauben / neu holen</button>
-    <button id="adminSet" class="btn" style="background:#ef4444">Spot setzen (Admin)</button>
-    <div style="font-size:13px;opacity:.8;margin-top:10px">
-      Standort nur über <b>HTTPS</b> oder <b>localhost</b>. Kompass kalibrieren (∞-Bewegung).
-    </div>
+    <button id="start" class="btn">Los geht’s</button>
+    <button id="admin" class="btn" style="background:#ef4444">Spot setzen (Admin)</button>
   </div>
 </div>
 
@@ -72,9 +66,8 @@
 </div>
 
 <div id="hud">
-  <svg id="arrow" viewBox="0 0 100 100">
-    <polygon points="50,5 80,55 60,55 60,95 40,95 40,55 20,55"
-      fill="#00ffff" opacity="0.95"/>
+  <svg id="arrow" viewBox="0 0 100 100" aria-label="Richtung zum Spot">
+    <polygon points="50,5 80,55 60,55 60,95 40,95 40,55 20,55" fill="#00ffff" opacity="0.95"/>
   </svg>
   <div id="dist">Entfernung: –</div>
 </div>
@@ -82,465 +75,211 @@
 <div id="status">Bereit…</div>
 <div id="mount"></div>
 
-<!-- Platzier-UI (Admin) -->
-<div id="placeUI" style="position:fixed;left:50%;bottom:16px;transform:translateX(-50%);
-  display:none;z-index:12;background:#000c;border:1px solid #1f2937;border-radius:12px;
-  padding:8px 10px;gap:8px;align-items:center">
-  <span style="font-weight:800;margin-right:8px">📍 Setz-Modus aktiv</span>
-  <button id="confirmPlace" class="btn" style="background:#10b981">Hier speichern</button>
-  <button id="cancelPlace" class="btn" style="background:#6b7280">Abbrechen</button>
-</div>
+<script type="module">
+/*** Firebase handles ***/
+const { collection, addDoc, getDocs, serverTimestamp } = window._fs;
+const db = window._db;
 
-<script>
-/*** Firebase INIT (deine Config) ***/
-const firebaseConfig = {
-  apiKey: "AIzaSyAd4_0zLdbI6jkjcZZUtMSWCYKP14dGHzQ",
-  authDomain: "geo-ar-2c66d.firebaseapp.com",
-  projectId: "geo-ar-2c66d",
-  storageBucket: "geo-ar-2c66d.firebasestorage.app",
-  messagingSenderId: "232770478087",
-  appId: "1:232770478087:web:d0d6cb8a585bdef5fdcaa2"
-};
-let db = null;
-try { firebase.initializeApp(firebaseConfig); db = firebase.firestore(); } catch(e){ console.warn('Firebase init:', e); }
+/*** UI-Refs ***/
+const mount    = document.getElementById('mount');
+const overlay  = document.getElementById('overlay');
+const statusEl = document.getElementById('status');
+const arrowEl  = document.getElementById('arrow');
+const distEl   = document.getElementById('dist');
+const nearestNameEl = document.getElementById('nearestName');
 
 /*** Konfiguration ***/
-const IMG_SRC = 'https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg';
+const IMG_SRC   = "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg";
+const BIG_SCALE = "34 25.5 1";
 
-/* Feste Spots (inkl. deiner zwei neuen) */
+/* Feste Spots + deine 2 neuen */
 const BASE_TARGETS = [
   { name: 'Altstadt-Spot',         lat: 48.366184, lon: 10.867701 },
   { name: 'Stettenstraße 7',       lat: 48.368905, lon: 10.898445 },
-  { name: 'Neuer Spot',            lat: 48.36630,  lon: 10.86781  }, // 48.36630,10.86781
-  { name: 'Gabelsbergerstraße 64', lat: 48.33598,  lon: 10.86728  }  // 86199
+  { name: 'Neuer Spot',            lat: 48.36630,  lon: 10.86781  },
+  { name: 'Gabelsbergerstraße 64', lat: 48.33598,  lon: 10.86728  }
 ];
-
-let REMOTE_TARGETS = []; // aus Firestore
-
-const BIG_SCALE  = '34 25.5 1';  // draußen sehr groß
-const TEST_SCALE = '12 9 1';     // 1m-Beacon
-
-/*** UI-Refs ***/
-const statusEl  = document.getElementById('status');
-const mount     = document.getElementById('mount');
-const overlay   = document.getElementById('overlay');
-const arrowEl   = document.getElementById('arrow');
-const distEl    = document.getElementById('dist');
-const nearestNameEl = document.getElementById('nearestName');
-
-const httpsPill = document.getElementById('httpsPill');
-const fbPill    = document.getElementById('fbPill');
-const camPill   = document.getElementById('camPill');
-const sensPill  = document.getElementById('sensPill');
-const geoPill   = document.getElementById('geoPill');
-const headPill  = document.getElementById('headPill');
-const posPill   = document.getElementById('posPill');
-
-const placeUI = document.getElementById('placeUI');
-const confirmPlaceBtn = document.getElementById('confirmPlace');
-const cancelPlaceBtn  = document.getElementById('cancelPlace');
+let REMOTE_TARGETS = []; // Firestore
 
 /*** State ***/
-let sceneEl, baseLayerEl, remoteLayerEl, localImgEl;
-let started = false;
-let placingMarkerEl = null;
-let deviceHeadingDeg = null;
-let geoWatchId = null;
+let sceneEl, started=false, deviceHeadingDeg=null, geoWatchId=null;
 
 /*** Buttons ***/
-document.getElementById('start').addEventListener('click', initGeo);
-document.getElementById('spawnHere').addEventListener('click', spawnHere);
-document.getElementById('askGeo').addEventListener('click', ensureGeoWatch);
-document.getElementById('adminSet').addEventListener('click', adminSetSpot);
+document.getElementById('start').addEventListener('click', startViewer);
+document.getElementById('admin').addEventListener('click', startAdmin);
 
-/*** Diagnose: HTTPS + Firebase ***/
-(function checkHttps(){
-  const ok = (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
-  httpsPill.textContent = ok ? 'HTTPS: OK' : 'HTTPS: NICHT HTTPS – Standort blockiert';
-  httpsPill.classList.add(ok ? 'ok' : 'bad');
-})();
-checkFirebaseHealth();
-
-/* Firebase-Kontrolle (Read/Write-Ping) */
-async function checkFirebaseHealth(){
-  if(!db){ fbPill.textContent='Firebase: nicht initialisiert'; fbPill.classList.add('bad'); return; }
+/*** Start: Viewer ***/
+async function startViewer(){
   try{
-    await db.collection('health').doc('__ping__').set({ t: new Date().toISOString() }, { merge: true });
-    const snap = await db.collection('health').doc('__ping__').get();
-    if (snap.exists){
-      fbPill.textContent = 'Firebase: OK';
-      fbPill.classList.remove('warn','bad'); fbPill.classList.add('ok');
-    }else{
-      fbPill.textContent = 'Firebase: Read/Write fraglich';
-      fbPill.classList.add('warn');
-    }
-  }catch(e){
-    fbPill.textContent = 'Firebase: FEHLER (Rules?)';
-    fbPill.classList.add('bad');
-    console.warn('Firebase health error:', e);
-  }
-}
-
-/*** Start – Szene immer bauen, GPS „best effort“ ***/
-async function initGeo(){
-  try{
-    statusEl.textContent = 'Starte… Kamera & Sensoren';
     await ensureCameraAndMotion();
-
-    ensureScene();                   // Kamera sofort sichtbar
-    overlay.style.display = 'none';
-    started = true;
-
-    statusEl.textContent = 'Hole Standort (falls möglich)…';
-    await ensureGeoWatch().catch(()=>{});
-
-    statusEl.textContent = 'Lade Spots…';
+    ensureScene();
+    overlay.style.display='none';
+    await ensureGeoWatch();                // erster GPS-Fix
+    // Feste + Remote-Spots
+    BASE_TARGETS.forEach(t => appendSpotEntity(t));
     await loadRemoteSpots();
-    REMOTE_TARGETS.forEach(t => appendSpotEntity(t, remoteLayerEl));
-
-    statusEl.textContent = 'Bereit. Geo-Spots aktiv.';
-  }catch(err){
-    console.error(err);
-    statusEl.textContent = 'Fehler beim Start: ' + err.message;
+    REMOTE_TARGETS.forEach(t => appendSpotEntity(t));
+    started=true;
+    statusEl.textContent='Viewer aktiv. HUD zeigt Richtung & Entfernung.';
+  }catch(e){
+    statusEl.textContent='Start-Fehler: '+e.message;
   }
 }
 
-/*** Szene EINMAL bauen (kein Rebuild → verhindert Kamera-Freeze) ***/
+/*** Start: Admin (Spot speichern) ***/
+async function startAdmin(){
+  const pw = prompt('Admin-Passwort:');
+  if(pw!=='1234'){ alert('Falsches Passwort'); return; }
+
+  try{
+    await ensureCameraAndMotion();
+    ensureScene();
+    overlay.style.display='none';
+    const pos = await getOnceLocation();
+    const { latitude, longitude, accuracy } = pos.coords;
+
+    await addDoc(collection(db,'spots'),{
+      name:'Echo der Gedanken',
+      img: IMG_SRC,
+      lat: Number(latitude.toFixed(6)),
+      lon: Number(longitude.toFixed(6)),
+      createdAt: serverTimestamp()
+    });
+
+    // sofort lokal anzeigen
+    const docData = { name:'Echo der Gedanken', img:IMG_SRC, lat:latitude, lon:longitude };
+    appendSpotEntity(docData);
+
+    statusEl.textContent = `Gespeichert: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} (±${Math.round(accuracy)} m)`;
+  }catch(e){
+    console.error(e);
+    statusEl.textContent = 'Admin-Fehler: '+e.message;
+  }
+}
+
+/*** Szene (einmal) ***/
 function ensureScene(){
-  if (sceneEl) return;
+  if(sceneEl) return;
   mount.innerHTML = `
     <a-scene embedded vr-mode-ui="enabled:false"
-             renderer="antialias:true; alpha:true"
-             arjs="sourceType: webcam; videoTexture:true; trackingMethod: best; facingMode: environment;">
-      <a-box color="#00ffff" depth="1.2" height="1.2" width="1.2" position="0 0 -3"
-             material="shader: flat; opacity: 0.9"></a-box>
-      <a-entity id="baseLayer"></a-entity>
-      <a-entity id="remoteLayer"></a-entity>
-      <a-camera gps-camera rotation-reader></a-camera>
+      renderer="antialias:true; alpha:true"
+      arjs="sourceType: webcam; videoTexture:true; trackingMethod: best; facingMode: environment;">
+      <a-camera gps-camera="gpsMinDistance:0; gpsTimeInterval:1000" rotation-reader></a-camera>
     </a-scene>`;
   sceneEl = document.querySelector('a-scene');
-  baseLayerEl   = sceneEl.querySelector('#baseLayer');
-  remoteLayerEl = sceneEl.querySelector('#remoteLayer');
-
-  BASE_TARGETS.forEach(t => appendSpotEntity(t, baseLayerEl));
   startHeadingListeners();
 }
 
-/*** Geo-Entity dynamisch hinzufügen ***/
-function appendSpotEntity(t, parentEl){
-  const imgSrc = t.img || IMG_SRC;
-  const wrap = document.createElement('a-entity');
-  wrap.setAttribute('gps-entity-place', `latitude: ${t.lat}; longitude: ${t.lon};`);
-
-  const plane = document.createElement('a-plane');
-  plane.setAttribute('width','36');
-  plane.setAttribute('height','27');
-  plane.setAttribute('position','0 0 -0.02');
-  plane.setAttribute('material','shader: flat; color: #00ffff; opacity: 0.12; transparent: true');
-
-  const img = document.createElement('a-image');
-  img.setAttribute('src', imgSrc);
-  img.setAttribute('scale', BIG_SCALE);
-  img.setAttribute('material','shader: flat; opacity: 1');
-  img.setAttribute('look-at','[gps-camera]');
-
-  const ring = document.createElement('a-ring');
-  ring.setAttribute('radius-inner','17');
-  ring.setAttribute('radius-outer','17.8');
-  ring.setAttribute('position','0 0 0.02');
-  ring.setAttribute('material','color: #00ffff; shader: flat; opacity: 0.95; transparent: true');
-  ring.setAttribute('animation__pulse','property=scale; to=1.06 1.06 1; dir=alternate; dur=700; loop=true; easing=easeInOutSine');
-
-  wrap.appendChild(plane);
-  wrap.appendChild(img);
-  wrap.appendChild(ring);
-
-  (parentEl || sceneEl).appendChild(wrap);
+/*** Geo-Entity ***/
+function appendSpotEntity(d){
+  const el=document.createElement('a-entity');
+  el.setAttribute('gps-entity-place',`latitude: ${d.lat}; longitude: ${d.lon};`);
+  el.innerHTML = `
+    <a-plane width="36" height="27" position="0 0 -0.02"
+             material="shader: flat; color: #00ffff; opacity: 0.12; transparent:true"></a-plane>
+    <a-image src="${d.img||IMG_SRC}" scale="${BIG_SCALE}" look-at="[gps-camera]"
+             material="shader: flat; opacity:1"></a-image>
+    <a-ring radius-inner="17" radius-outer="17.8" position="0 0 0.02"
+            material="color:#00ffff; shader:flat; opacity:0.95; transparent:true"
+            animation__pulse="property=scale; to=1.06 1.06 1; dir=alternate; dur=700; loop=true"></a-ring>
+  `;
+  sceneEl.appendChild(el);
 }
 
-/*** Admin-Setzen: Live-Kamera + Speichern → sofort sichtbar ***/
-async function adminSetSpot(){
-  try{
-    const pw = prompt('Admin-Passwort eingeben:');
-    if (pw !== '1234'){ statusEl.textContent = 'Falsches Passwort.'; return; }
-
-    await ensureCameraAndMotion();
-    if (!started){ ensureScene(); overlay.style.display = 'none'; started = true; }
-
-    createPlacingMarker();         // 1 m vor dir sichtbar
-    placeUI.style.display = 'flex';
-    statusEl.textContent = 'Setz-Modus: Richte die Kamera aus. „Hier speichern“, um den Spot zu setzen.';
-
-    const onConfirm = async ()=>{
-      try{
-        const pos = await getOnceLocation();
-        const { latitude, longitude, accuracy } = pos.coords;
-
-        if(!db){ statusEl.textContent = 'Firebase nicht aktiv – kann nicht speichern.'; return; }
-        const name = prompt('Name für den Spot:','Echo der Gedanken') || 'Echo der Gedanken';
-
-        const docData = {
-          name,
-          lat: Number(latitude.toFixed(6)),
-          lon: Number(longitude.toFixed(6)),
-          img: IMG_SRC,
-          createdAt: new Date().toISOString()
-        };
-        await db.collection('spots').add(docData);
-
-        REMOTE_TARGETS.push(docData);          // lokal merken
-        appendSpotEntity(docData, remoteLayerEl); // sofort sichtbar
-        statusEl.textContent = `Gespeichert bei ${docData.lat}, ${docData.lon} (±${Math.round(accuracy)} m).`;
-      }catch(err){
-        console.error(err);
-        statusEl.textContent = 'Fehler beim Speichern: ' + err.message;
-      }finally{
-        cleanupPlacingUI();
-      }
-    };
-    const onCancel = ()=>{ statusEl.textContent='Setz-Modus abgebrochen.'; cleanupPlacingUI(); };
-
-    function cleanupPlacingUI(){
-      removePlacingMarker();
-      placeUI.style.display = 'none';
-      confirmPlaceBtn.removeEventListener('click', onConfirm);
-      cancelPlaceBtn.removeEventListener('click', onCancel);
-    }
-    confirmPlaceBtn.addEventListener('click', onConfirm);
-    cancelPlaceBtn.addEventListener('click', onCancel);
-
-  }catch(err){
-    console.error(err);
-    statusEl.textContent = 'Admin-Fehler: ' + err.message;
-  }
-}
-
-/*** Firestore-Spots laden ***/
+/*** Firestore laden ***/
 async function loadRemoteSpots(){
-  if(!db){ REMOTE_TARGETS = []; return; }
   try{
-    const snap = await db.collection('spots').get();
+    const snap = await getDocs(collection(db,'spots'));
     REMOTE_TARGETS = snap.docs.map(d=>{
-      const x = d.data();
-      return { name: x.name || 'Spot', lat: x.lat, lon: x.lon, img: x.img || IMG_SRC };
+      const x=d.data(); return { name:x.name||'Spot', img:x.img||IMG_SRC, lat:x.lat, lon:x.lon };
     });
   }catch(e){
-    console.warn('Konnte Spots nicht laden:', e);
+    console.warn('Spots laden fehlschlag:', e);
   }
 }
 
 /*** Kamera + Sensoren ***/
 async function ensureCameraAndMotion(){
+  await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
   try{
-    await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
-    camPill.textContent = 'Kamera: OK'; camPill.classList.add('ok');
-  }catch(err){
-    camPill.textContent = 'Kamera: BLOCKIERT'; camPill.classList.add('bad');
-    throw new Error('Kamera blockiert. Bitte erlauben.');
-  }
-  try{
-    if (typeof DeviceMotionEvent?.requestPermission === 'function') { await DeviceMotionEvent.requestPermission().catch(()=>{}); }
-    if (typeof DeviceOrientationEvent?.requestPermission === 'function') { await DeviceOrientationEvent.requestPermission().catch(()=>{}); }
-    sensPill.textContent = 'Sensor: OK'; sensPill.classList.add('ok');
-  }catch(e){
-    sensPill.textContent = 'Sensor: evtl. blockiert'; sensPill.classList.add('warn');
-  }
-  startHeadingListeners();
+    if(typeof DeviceMotionEvent?.requestPermission === 'function'){ await DeviceMotionEvent.requestPermission().catch(()=>{}); }
+    if(typeof DeviceOrientationEvent?.requestPermission === 'function'){ await DeviceOrientationEvent.requestPermission().catch(()=>{}); }
+  }catch(e){}
 }
 
-/*** Standort einmalig ***/
+/*** GPS ***/
 function getOnceLocation(){
   return new Promise((res,rej)=>{
     if(!('geolocation' in navigator)) return rej(new Error('Geolocation nicht unterstützt'));
-    navigator.geolocation.getCurrentPosition(res, e=>rej(new Error('Standort: '+e.message)),
+    navigator.geolocation.getCurrentPosition(res, e=>rej(new Error(e.message)),
       { enableHighAccuracy:true, timeout:15000, maximumAge:0 });
   });
 }
-
-/*** Standort-Watch (nicht blockierend) ***/
-async function ensureGeoWatch(){
-  return new Promise((resolve)=>{
-    if(!('geolocation' in navigator)){
-      geoPill.textContent = 'Standort: nicht unterstützt'; geoPill.classList.add('bad');
-      statusEl.textContent = 'Dieses Gerät/Browser unterstützt keine Standortabfrage.';
-      return resolve();
-    }
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        updatePosPill(pos.coords);
-        if(geoWatchId!=null){ navigator.geolocation.clearWatch(geoWatchId); }
-        geoWatchId = navigator.geolocation.watchPosition(
-          p => {
-            geoPill.textContent = 'Standort: OK';
-            geoPill.classList.remove('warn','bad'); geoPill.classList.add('ok');
-            updatePosPill(p.coords);
-            updateHudWithNearest(p.coords);
-          },
-          err => { handleGeoError(err); },
-          { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
-        );
-        resolve();
-      },
-      err => { handleGeoError(err); resolve(); },
-      { enableHighAccuracy:true, timeout:12000, maximumAge:0 }
-    );
+function ensureGeoWatch(){
+  return new Promise((resolve,reject)=>{
+    if(!('geolocation' in navigator)) return reject(new Error('Geolocation nicht unterstützt'));
+    navigator.geolocation.getCurrentPosition(p=>{
+      // Start Watch nach erstem Fix
+      if(geoWatchId!=null) navigator.geolocation.clearWatch(geoWatchId);
+      geoWatchId = navigator.geolocation.watchPosition(
+        pos=>{ updateHud(pos.coords); },
+        err=>{ statusEl.textContent='GPS-Fehler: '+err.message; },
+        { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
+      );
+      updateHud(p.coords);
+      resolve();
+    },err=>reject(err),{ enableHighAccuracy:true, timeout:15000, maximumAge:0 });
   });
 }
 
-/*** Setz-Marker (1 m vor dir) ***/
-function createPlacingMarker(){
-  removePlacingMarker();
-  placingMarkerEl = document.createElement('a-entity');
-
-  const bg = document.createElement('a-plane');
-  bg.setAttribute('width','14');
-  bg.setAttribute('height','10.5');
-  bg.setAttribute('material','shader: flat; color: #00ffff; opacity: 0.18; transparent: true');
-  bg.setAttribute('position','0 0 0');
-
-  const img = document.createElement('a-image');
-  img.setAttribute('src', IMG_SRC);
-  img.setAttribute('scale', TEST_SCALE);
-  img.setAttribute('material','shader: flat; opacity: 1; transparent: false');
-  img.setAttribute('look-at','[camera]');
-
-  const frame = document.createElement('a-ring');
-  frame.setAttribute('radius-inner','6.2');
-  frame.setAttribute('radius-outer','6.6');
-  frame.setAttribute('position','0 0 0.01');
-  frame.setAttribute('material','color: #00ffff; shader: flat; opacity: 0.95; transparent: true');
-  frame.setAttribute('animation__pulse','property=scale; to=1.08 1.08 1; dir=alternate; dur=600; loop=true; easing=easeInOutSine');
-
-  placingMarkerEl.appendChild(bg);
-  placingMarkerEl.appendChild(img);
-  placingMarkerEl.appendChild(frame);
-
-  placingMarkerEl.setAttribute('position','0 0 -1'); // 1 m vor dir
-  if (!sceneEl) ensureScene();
-  sceneEl.appendChild(placingMarkerEl);
-}
-function removePlacingMarker(){ if (placingMarkerEl){ placingMarkerEl.remove(); placingMarkerEl = null; } }
-
-/*** HUD-Logik ***/
-function updateHudWithNearest(coords){
-  const R=6371e3, toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
-  const distM = (la1,lo1,la2,lo2)=>{
-    const dLa=toRad(la2-la1), dLo=toRad(lo2-lo1);
-    const a=Math.sin(dLa/2)**2+Math.cos(toRad(la1))*Math.cos(toRad(la2))*Math.sin(dLo/2)**2;
-    return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-  };
-  const bearingDeg = (la1,lo1,la2,lo2)=>{
-    const φ1=toRad(la1), φ2=toRad(la2), λ1=toRad(lo1), λ2=toRad(lo2);
-    const y = Math.sin(λ2-λ1)*Math.cos(φ2);
-    const x = Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1);
-    let θ = toDeg(Math.atan2(y,x));
-    return (θ+360)%360;
-  };
+/*** HUD: Distanz + Richtung ***/
+function updateHud(coords){
+  const all=[...BASE_TARGETS, ...REMOTE_TARGETS];
+  if(!all.length) return;
 
   const { latitude, longitude, accuracy } = coords;
-  const allTargets = [...BASE_TARGETS, ...REMOTE_TARGETS];
-  if(allTargets.length === 0){ return; }
+  const nearest = all
+    .map(t=>({ t, d: distM(latitude, longitude, t.lat, t.lon), brg: bearing(latitude, longitude, t.lat, t.lon) }))
+    .sort((a,b)=>a.d-b.d)[0];
 
-  const entries = allTargets.map(t => ({
-    name: t.name,
-    d: distM(latitude, longitude, t.lat, t.lon),
-    brg: bearingDeg(latitude, longitude, t.lat, t.lon)
-  })).sort((a,b)=>a.d-b.d);
-
-  const nearest = entries[0];
-  nearestNameEl.textContent = nearest.name;
-
-  const dTxt = nearest.d >= 1000 ? (nearest.d/1000).toFixed(2)+' km' : nearest.d.toFixed(0)+' m';
-  distEl.textContent = `Entfernung: ${dTxt} · GPS ±${Math.round(accuracy)} m`;
+  nearestNameEl.textContent = nearest.t.name || 'Spot';
+  const txt = nearest.d>=1000 ? (nearest.d/1000).toFixed(2)+' km' : Math.round(nearest.d)+' m';
+  distEl.textContent = `Entfernung: ${txt} · GPS ±${Math.round(accuracy)} m`;
 
   if (deviceHeadingDeg!=null){
-    const turn = ((nearest.brg - deviceHeadingDeg) + 360) % 360;
-    arrowEl.style.transform = `rotate(${turn}deg)`;
-    headPill.textContent = 'Heading: ' + deviceHeadingDeg.toFixed(0) + '°';
-    headPill.classList.add('ok');
-  }else{
-    headPill.textContent = 'Heading: – (Sensor noch aus)';
-    headPill.classList.remove('ok'); headPill.classList.add('warn');
+    // Drehwinkel = Zielkurs - Gerätekurs
+    const turn=((nearest.brg - deviceHeadingDeg)+360)%360;
+    arrowEl.style.transform=`rotate(${turn}deg)`;
   }
-
-  statusEl.textContent = `Nächster: ${nearest.name} · Kurs: ${nearest.brg.toFixed(0)}° · Dein Heading: ${deviceHeadingDeg!=null?deviceHeadingDeg.toFixed(0)+'°':'–'}`;
+  statusEl.textContent = `Kurs: ${nearest.brg.toFixed(0)}° · Heading: ${deviceHeadingDeg!=null?deviceHeadingDeg.toFixed(0)+'°':'–'}`;
 }
 
-/*** Heading (Kompass) ***/
+/*** Kompass ***/
 function startHeadingListeners(){
   window.addEventListener('deviceorientation', e=>{
     if (typeof e.webkitCompassHeading === 'number'){
-      deviceHeadingDeg = e.webkitCompassHeading;
-    }else if (e.absolute === true && typeof e.alpha === 'number'){
-      deviceHeadingDeg = 360 - e.alpha;
+      deviceHeadingDeg = e.webkitCompassHeading; // iOS
+    }else if (e.absolute===true && typeof e.alpha === 'number'){
+      deviceHeadingDeg = 360 - e.alpha; // Android (ungefähr)
     }
-    headPill.textContent = deviceHeadingDeg!=null ? ('Heading: '+deviceHeadingDeg.toFixed(0)+'°') : 'Heading: –';
   }, true);
-
   window.addEventListener('deviceorientationabsolute', e=>{
-    if (typeof e.alpha === 'number'){
-      deviceHeadingDeg = 360 - e.alpha;
-    }
+    if (typeof e.alpha === 'number'){ deviceHeadingDeg = 360 - e.alpha; }
   }, true);
 }
 
-/*** Diagnose-Helfer ***/
-function updatePosPill(c){
-  const lat = c.latitude.toFixed(5);
-  const lon = c.longitude.toFixed(5);
-  posPill.textContent = `Pos: ${lat}, ${lon} (±${Math.round(c.accuracy)} m)`;
+/*** Geo-Utils ***/
+const toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
+function distM(la1,lo1,la2,lo2){
+  const R=6371e3, dLa=toRad(la2-la1), dLo=toRad(lo2-lo1);
+  const a=Math.sin(dLa/2)**2+Math.cos(toRad(la1))*Math.cos(toRad(la2))*Math.sin(dLo/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
-function handleGeoError(err){
-  let txt = 'Standort: Fehler';
-  geoPill.classList.remove('ok','warn','bad');
-  switch(err.code){
-    case 1: txt = 'Standort: verweigert (Erlaubnis geben)'; geoPill.classList.add('bad'); break;
-    case 2: txt = 'Standort: nicht verfügbar'; geoPill.classList.add('warn'); break;
-    case 3: txt = 'Standort: Timeout'; geoPill.classList.add('warn'); break;
-    default: txt = 'Standort: Fehler ('+err.message+')'; geoPill.classList.add('warn');
-  }
-  geoPill.textContent = txt;
-  statusEl.textContent = txt + ' – nutze „Standort erlauben / neu holen“.';
-}
-
-/*** Test-Beacon (ohne GPS) ***/
-async function spawnHere(){
-  try{
-    if(!started){ await ensureCameraAndMotion(); ensureScene(); overlay.style.display='none'; started=true; }
-    if(localImgEl){ localImgEl.remove(); }
-
-    localImgEl = document.createElement('a-entity');
-
-    const bg = document.createElement('a-plane');
-    bg.setAttribute('width','14');
-    bg.setAttribute('height','10.5');
-    bg.setAttribute('material','shader: flat; color: #00ffff; opacity: 0.18; transparent: true');
-    bg.setAttribute('position','0 0 0');
-
-    const img = document.createElement('a-image');
-    img.setAttribute('src', IMG_SRC);
-    img.setAttribute('scale', TEST_SCALE);
-    img.setAttribute('material','shader: flat; opacity: 1; transparent: false');
-    img.setAttribute('look-at','[camera]');
-
-    const frame = document.createElement('a-ring');
-    frame.setAttribute('radius-inner','6.2');
-    frame.setAttribute('radius-outer','6.6');
-    frame.setAttribute('position','0 0 0.01');
-    frame.setAttribute('material','color: #00ffff; shader: flat; opacity: 0.95; transparent: true');
-    frame.setAttribute('animation__pulse','property=scale; to=1.08 1.08 1; dir=alternate; dur=600; loop=true; easing=easeInOutSine');
-
-    localImgEl.appendChild(bg);
-    localImgEl.appendChild(img);
-    localImgEl.appendChild(frame);
-
-    localImgEl.setAttribute('position','0 0 -1');   // 1 m vor dir
-    sceneEl.appendChild(localImgEl);
-
-    statusEl.textContent = 'Test-Beacon 1 m vor dir platziert (ohne Standort).';
-  }catch(err){
-    statusEl.textContent = 'Fehler beim Testmodus: ' + err.message;
-  }
+function bearing(la1,lo1,la2,lo2){
+  const φ1=toRad(la1), φ2=toRad(la2), λ1=toRad(lo1), λ2=toRad(lo2);
+  const y=Math.sin(λ2-λ1)*Math.cos(φ2);
+  const x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1);
+  return (toDeg(Math.atan2(y,x))+360)%360;
 }
 </script>
 </body>
