@@ -3,81 +3,341 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>3D ohne AR – Bild als Textur</title>
+<title>Geo-AR mit HUD & Firebase (sichtbar fix)</title>
+
+<!-- A-Frame + AR.js -->
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
+<!-- ✅ Billboarding-Component (wichtig, damit das Bild dich immer anschaut) -->
+<script src="https://unpkg.com/aframe-look-at-component@1.0.0/dist/aframe-look-at-component.min.js"></script>
+
+<!-- Firebase (ESM) -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+  import { getFirestore, collection, addDoc, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAd4_0zLdbI6jkjcZZUtMSWCYKP14dGHzQ",
+    authDomain: "geo-ar-2c66d.firebaseapp.com",
+    projectId: "geo-ar-2c66d",
+    storageBucket: "geo-ar-2c66d.appspot.com",
+    messagingSenderId: "232770478087",
+    appId: "1:232770478087:web:d0d6cb8a585bdef5fdcaa2"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  window._db = db;
+  window._fs = { collection, addDoc, getDocs, serverTimestamp };
+</script>
+
 <style>
-  html,body{height:100%;margin:0;background:#0b0b0b;font-family:system-ui}
-  #c{display:block;width:100%;height:100%}
-  #ui{position:fixed;left:50%;top:12px;transform:translateX(-50%);background:#000a;color:#fff;padding:8px 12px;border-radius:12px;font-weight:700}
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,Segoe UI,Inter,Roboto,sans-serif}
+  #overlay{position:fixed;inset:0;display:grid;place-items:center;background:#000c;z-index:10;text-align:center;padding:16px}
+  .btn{padding:12px 14px;border:0;border-radius:12px;font-weight:800;color:#fff;background:#0ea5e9;margin:0 6px;cursor:pointer}
+  #status{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);background:#000d;padding:10px 14px;border-radius:10px;z-index:5;white-space:nowrap;font-weight:700}
+  #hud{position:fixed;top:84px;left:50%;transform:translateX(-50%);z-index:6;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
+  #arrow{width:96px;height:96px;filter:drop-shadow(0 0 8px #00ffff);transition:transform 80ms linear}
+  #dist{font-size:18px;font-weight:900;background:#000c;padding:8px 12px;border-radius:999px}
+  #corner{position:fixed;top:12px;right:12px;z-index:7;display:flex;gap:8px;align-items:center}
+  .chip{background:#000d;border:1px solid #1f2937;color:#fff;padding:8px 10px;border-radius:10px;font-size:12px}
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
-<div id="ui">Zieh mit der Maus / Pinch zum Zoomen</div>
 
-<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-<script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
-<script>
-const IMG_URL = "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg"; // dein Bild
+<div id="overlay">
+  <div>
+    <h1 style="margin:0 0 8px">Geo-AR starten</h1>
+    <p style="opacity:.9;max-width:640px;margin:0 auto 14px">
+      Erlaube <b>Kamera</b>, <b>Standort</b> und ggf. <b>Bewegungssensor</b> (iOS).<br>
+      <b>Los geht’s</b> zeigt Spots + HUD (Richtung & Entfernung).<br>
+      <b>Spot setzen</b> speichert deinen Standort als neuen Spot (PW: <code>1234</code>).
+    </p>
+    <button id="start" class="btn">Los geht’s</button>
+    <button id="admin" class="btn" style="background:#ef4444">Spot setzen (Admin)</button>
+  </div>
+</div>
 
-const canvas = document.getElementById('c');
-const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
-renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
-renderer.setSize(innerWidth, innerHeight);
+<div id="corner">
+  <div class="chip">🎯 Nächster Spot: <span id="nearestName">–</span></div>
+</div>
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x111111);
+<div id="hud">
+  <svg id="arrow" viewBox="0 0 100 100" aria-label="Richtung zum Spot">
+    <polygon points="50,5 80,55 60,55 60,95 40,95 40,55 20,55" fill="#00ffff" opacity="0.95"/>
+  </svg>
+  <div id="dist">Entfernung: –</div>
+</div>
 
-const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.01, 100);
-camera.position.set(0, 0, 2.5);
+<div id="status">Bereit…</div>
+<div id="mount"></div>
 
-const controls = new THREE.OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.06;
-controls.target.set(0,0,0);
+<script type="module">
+/*** Firebase handles ***/
+const { collection, addDoc, getDocs, serverTimestamp } = window._fs;
+const db = window._db;
 
-// Licht
-const light = new THREE.HemisphereLight(0xffffff, 0x202020, 1.0);
-scene.add(light);
+/*** UI-Refs ***/
+const mount    = document.getElementById('mount');
+const overlay  = document.getElementById('overlay');
+const statusEl = document.getElementById('status');
+const arrowEl  = document.getElementById('arrow');
+const distEl   = document.getElementById('dist');
+const nearestNameEl = document.getElementById('nearestName');
 
-// Bild als 3D-Plane
-const loader = new THREE.TextureLoader();
-loader.setCrossOrigin('anonymous');
-loader.load(IMG_URL + "?v=" + Date.now(), (tex)=>{
-  tex.colorSpace = THREE.SRGBColorSpace;
-  const imgW = tex.source.data.width || 1600;
-  const imgH = tex.source.data.height || 1200;
-  const ar = imgW / imgH;               // Seitenverhältnis
-  const height = 1.2;                    // 1.2 m „virtuell“
-  const width  = height * ar;
+/*** Konfiguration ***/
+const IMG_SRC   = "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg";
+const BIG_SCALE = "34 25.5 1";
 
-  const geo = new THREE.PlaneGeometry(width, height);
-  const mat = new THREE.MeshBasicMaterial({map: tex, transparent:false});
-  const mesh = new THREE.Mesh(geo, mat);
-  scene.add(mesh);
-}, (xhr)=>{}, (err)=>{
-  // Fallback, falls das Bild nicht lädt
-  const geo = new THREE.PlaneGeometry(1.6, 1.2);
-  const mat = new THREE.MeshBasicMaterial({color:0x444444});
-  scene.add(new THREE.Mesh(geo, mat));
-});
+/* 🔹 Billboard-Einstellungen (Anzeige vor der Kamera, NICHT ortsgebunden) */
+const BILLBOARD_SIZE = { w: 1.2, h: 0.9 }; // Meter
+const BILLBOARD_OFFSET_Z = -1.2;           // Meter vor der Kamera
+const SHOW_RADIUS_M = 80;                  // ab dieser Nähe zum Spot wird eingeblendet
 
-// Boden-Grid (optional)
-const grid = new THREE.GridHelper(10, 20, 0x222222, 0x111111);
-grid.position.y = -0.75;
-scene.add(grid);
+/* Feste Spots + deine 2 neuen */
+const BASE_TARGETS = [
+  { name: 'Altstadt-Spot',         lat: 48.366184, lon: 10.867701 },
+  { name: 'Stettenstraße 7',       lat: 48.368905, lon: 10.898445 },
+  { name: 'Neuer Spot',            lat: 48.36630,  lon: 10.86781  },
+  { name: 'Gabelsbergerstraße 64', lat: 48.33598,  lon: 10.86728  }
+];
+let REMOTE_TARGETS = []; // Firestore
 
-function onResize(){
-  camera.aspect = innerWidth/innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+/*** State ***/
+let sceneEl, started=false, deviceHeadingDeg=null, geoWatchId=null;
+let cameraEl, billboardEl=null, billboardVisible=false;
+
+/*** Buttons ***/
+document.getElementById('start').addEventListener('click', startViewer);
+document.getElementById('admin').addEventListener('click', startAdmin);
+
+/*** Start: Viewer ***/
+async function startViewer(){
+  try{
+    await ensureCameraAndMotion();
+    ensureScene();
+    overlay.style.display='none';
+    await ensureGeoWatch();                // erster GPS-Fix
+
+    // 🔸 Billboard (Anzeige vor der Kamera) vorbereiten – zunächst unsichtbar
+    ensureBillboard();
+
+    // 🔸 (Optional) Geo-Objekte weiter anzeigen – wenn du sie NICHT fest sehen willst,
+    //     kannst du die beiden forEach-Zeilen auskommentieren:
+    BASE_TARGETS.forEach(t => appendSpotEntity(t));
+    await loadRemoteSpots();
+    REMOTE_TARGETS.forEach(t => appendSpotEntity(t));
+
+    started=true;
+    statusEl.textContent='Viewer aktiv. Bild wird vor der Kamera eingeblendet, wenn du nah am Spot bist.';
+  }catch(e){
+    statusEl.textContent='Start-Fehler: '+e.message;
+  }
 }
-addEventListener('resize', onResize);
 
-(function animate(){
-  requestAnimationFrame(animate);
-  controls.update();
-  renderer.render(scene, camera);
-})();
+/*** Start: Admin (Spot speichern) ***/
+async function startAdmin(){
+  const pw = prompt('Admin-Passwort:');
+  if(pw!=='1234'){ alert('Falsches Passwort'); return; }
+
+  try{
+    await ensureCameraAndMotion();
+    ensureScene();
+    overlay.style.display='none';
+    const pos = await getOnceLocation();
+    const { latitude, longitude, accuracy } = pos.coords;
+
+    await addDoc(collection(db,'spots'),{
+      name:'Echo der Gedanken',
+      img: IMG_SRC,
+      lat: Number(latitude.toFixed(6)),
+      lon: Number(longitude.toFixed(6)),
+      createdAt: serverTimestamp()
+    });
+
+    statusEl.textContent = `Gespeichert: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} (±${Math.round(accuracy)} m)`;
+  }catch(e){
+    console.error(e);
+    statusEl.textContent = 'Admin-Fehler: '+e.message;
+  }
+}
+
+/*** Szene (einmal) ***/
+function ensureScene(){
+  if(sceneEl) return;
+  mount.innerHTML = `
+    <a-scene embedded vr-mode-ui="enabled:false"
+      renderer="antialias:true; alpha:true"
+      arjs="sourceType: webcam; videoTexture:true; trackingMethod: best; facingMode: environment;">
+      <a-entity id="rig">
+        <a-camera id="cam" gps-camera="gpsMinDistance:0; gpsTimeInterval:1000" rotation-reader></a-camera>
+      </a-entity>
+    </a-scene>`;
+  sceneEl = document.querySelector('a-scene');
+  cameraEl = document.getElementById('cam');
+  startHeadingListeners();
+}
+
+/*** Billboard (immer vor der Kamera, nur Anzeige) ***/
+function ensureBillboard(){
+  if (billboardEl) return;
+  billboardEl = document.createElement('a-entity');
+  billboardEl.setAttribute('position', `0 0 ${BILLBOARD_OFFSET_Z}`); // vor der Kamera
+  billboardEl.setAttribute('visible', 'false'); // wird von der Distanz-Logik gesteuert
+
+  const frame = document.createElement('a-plane');
+  frame.setAttribute('width', BILLBOARD_SIZE.w + 0.06);
+  frame.setAttribute('height', BILLBOARD_SIZE.h + 0.06);
+  frame.setAttribute('position','0 0 -0.02');
+  frame.setAttribute('material','shader: flat; color:#00ffff; opacity:.12; transparent:true; side: double');
+
+  const img = document.createElement('a-image');
+  img.setAttribute('src', IMG_SRC);
+  img.setAttribute('crossorigin','anonymous');
+  img.setAttribute('width', BILLBOARD_SIZE.w);
+  img.setAttribute('height', BILLBOARD_SIZE.h);
+
+  billboardEl.appendChild(frame);
+  billboardEl.appendChild(img);
+  cameraEl.appendChild(billboardEl);
+}
+function setBillboardVisible(v){
+  if (!billboardEl) return;
+  if (billboardVisible === v) return;
+  billboardVisible = v;
+  billboardEl.setAttribute('visible', v ? 'true' : 'false');
+}
+
+/*** Geo-Entity  (kann bleiben – ist unabhängig vom Billboard) ***/
+function appendSpotEntity(d){
+  const el=document.createElement('a-entity');
+  el.setAttribute('gps-entity-place',`latitude: ${d.lat}; longitude: ${d.lon};`);
+
+  const plane = document.createElement('a-plane');
+  plane.setAttribute('width','36');
+  plane.setAttribute('height','27');
+  plane.setAttribute('position','0 0 -0.02');
+  plane.setAttribute('material','shader: flat; color: #00ffff; opacity: 0.12; transparent:true; side: double');
+  plane.setAttribute('look-at','[gps-camera]');
+
+  const img = document.createElement('a-image');
+  img.setAttribute('src', d.img||IMG_SRC);
+  img.setAttribute('crossorigin','anonymous');
+  img.setAttribute('scale', BIG_SCALE);
+  img.setAttribute('material','shader: flat; opacity:1; side: double');
+  img.setAttribute('look-at','[gps-camera]');
+
+  const ring = document.createElement('a-ring');
+  ring.setAttribute('radius-inner','17');
+  ring.setAttribute('radius-outer','17.8');
+  ring.setAttribute('position','0 0 0.02');
+  ring.setAttribute('material','color:#00ffff; shader:flat; opacity:0.95; transparent:true; side: double');
+  ring.setAttribute('animation__pulse','property=scale; to=1.06 1.06 1; dir=alternate; dur=700; loop:true; easing=easeInOutSine');
+
+  el.appendChild(plane);
+  el.appendChild(img);
+  el.appendChild(ring);
+
+  sceneEl.appendChild(el);
+}
+
+/*** Firestore laden ***/
+async function loadRemoteSpots(){
+  try{
+    const snap = await getDocs(collection(db,'spots'));
+    REMOTE_TARGETS = snap.docs.map(d=>{
+      const x=d.data(); return { name:x.name||'Spot', img:x.img||IMG_SRC, lat:x.lat, lon:x.lon };
+    });
+  }catch(e){
+    console.warn('Spots laden fehlschlag:', e);
+  }
+}
+
+/*** Kamera + Sensoren ***/
+async function ensureCameraAndMotion(){
+  await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
+  try{
+    if(typeof DeviceMotionEvent?.requestPermission === 'function'){ await DeviceMotionEvent.requestPermission().catch(()=>{}); }
+    if(typeof DeviceOrientationEvent?.requestPermission === 'function'){ await DeviceOrientationEvent.requestPermission().catch(()=>{}); }
+  }catch(e){}
+}
+
+/*** GPS ***/
+function getOnceLocation(){
+  return new Promise((res,rej)=>{
+    if(!('geolocation' in navigator)) return rej(new Error('Geolocation nicht unterstützt'));
+    navigator.geolocation.getCurrentPosition(res, e=>rej(new Error(e.message)),
+      { enableHighAccuracy:true, timeout:15000, maximumAge:0 });
+  });
+}
+function ensureGeoWatch(){
+  return new Promise((resolve,reject)=>{
+    if(!('geolocation' in navigator)) return reject(new Error('Geolocation nicht unterstützt'));
+    navigator.geolocation.getCurrentPosition(p=>{
+      if(geoWatchId!=null) navigator.geolocation.clearWatch(geoWatchId);
+      geoWatchId = navigator.geolocation.watchPosition(
+        pos=>{ updateHudAndBillboard(pos.coords); },
+        err=>{ statusEl.textContent='GPS-Fehler: '+err.message; },
+        { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
+      );
+      updateHudAndBillboard(p.coords);
+      resolve();
+    },err=>reject(err),{ enableHighAccuracy:true, timeout:15000, maximumAge:0 });
+  });
+}
+
+/*** HUD + Billboard-Logik (Ein-/Ausblenden nach Nähe) ***/
+function updateHudAndBillboard(coords){
+  const all=[...BASE_TARGETS, ...REMOTE_TARGETS];
+  if(!all.length) return;
+
+  const { latitude, longitude, accuracy } = coords;
+  const ranked = all
+    .map(t=>({ t, d: distM(latitude, longitude, t.lat, t.lon), brg: bearing(latitude, longitude, t.lat, t.lon) }))
+    .sort((a,b)=>a.d-b.d);
+  const nearest = ranked[0];
+
+  nearestNameEl.textContent = nearest.t.name || 'Spot';
+  const txt = nearest.d>=1000 ? (nearest.d/1000).toFixed(2)+' km' : Math.round(nearest.d)+' m';
+  distEl.textContent = `Entfernung: ${txt} · GPS ±${Math.round(accuracy)} m`;
+
+  if (deviceHeadingDeg!=null){
+    const turn=((nearest.brg - deviceHeadingDeg)+360)%360;
+    arrowEl.style.transform=`rotate(${turn}deg)`;
+  }
+  statusEl.textContent = `Kurs: ${nearest.brg.toFixed(0)}° · Heading: ${deviceHeadingDeg!=null?deviceHeadingDeg.toFixed(0)+'°':'–'}`;
+
+  // 🔸 HIER: Ein/Ausblenden des Billboard je nach Distanz
+  setBillboardVisible(nearest.d <= SHOW_RADIUS_M);
+}
+
+/*** Kompass ***/
+function startHeadingListeners(){
+  window.addEventListener('deviceorientation', e=>{
+    if (typeof e.webkitCompassHeading === 'number'){
+      deviceHeadingDeg = e.webkitCompassHeading; // iOS
+    }else if (e.absolute===true && typeof e.alpha === 'number'){
+      deviceHeadingDeg = 360 - e.alpha; // Android (ungefähr)
+    }
+  }, true);
+  window.addEventListener('deviceorientationabsolute', e=>{
+    if (typeof e.alpha === 'number'){ deviceHeadingDeg = 360 - e.alpha; }
+  }, true);
+}
+
+/*** Geo-Utils ***/
+const toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
+function distM(la1,lo1,la2,lo2){
+  const R=6371e3, dLa=toRad(la2-la1), dLo=toRad(lo2-lo1);
+  const a=Math.sin(dLa/2)**2+Math.cos(toRad(la1))*Math.cos(toRad(la2))*Math.sin(dLo/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+function bearing(la1,lo1,la2,lo2){
+  const φ1=toRad(la1), φ2=toRad(la2), λ1=toRad(lo1), λ2=toRad(lo2);
+  const y=Math.sin(λ2-λ1)*Math.cos(φ2);
+  const x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1);
+  return (toDeg(Math.atan2(y,x))+360)%360;
+}
 </script>
 </body>
 </html>
