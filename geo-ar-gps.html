@@ -1,19 +1,23 @@
+
+
 <!doctype html>
 <html lang="de">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Pseudo-AR Geo Navigator (mit Firebase)</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Geo-AR mit HUD & Firebase (sichtbar fix)</title>
 
-<!-- A-Frame (ohne AR.js) -->
+<!-- A-Frame + AR.js -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
+<!-- ✅ Billboarding-Component (wichtig, damit das Bild dich immer anschaut) -->
+<script src="https://unpkg.com/aframe-look-at-component@1.0.0/dist/aframe-look-at-component.min.js"></script>
 
-<!-- Firebase SDK (ESM) -->
+<!-- Firebase (ESM) -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
   import { getFirestore, collection, addDoc, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
-  // 🔑 Deine Firebase Konfiguration
   const firebaseConfig = {
     apiKey: "AIzaSyAd4_0zLdbI6jkjcZZUtMSWCYKP14dGHzQ",
     authDomain: "geo-ar-2c66d.firebaseapp.com",
@@ -22,83 +26,38 @@
     messagingSenderId: "232770478087",
     appId: "1:232770478087:web:d0d6cb8a585bdef5fdcaa2"
   };
+
   const app = initializeApp(firebaseConfig);
-  const db  = getFirestore(app);
-  window._db = db; window._fs = {collection, addDoc, getDocs, serverTimestamp};
+  const db = getFirestore(app);
+  window._db = db;
+  window._fs = { collection, addDoc, getDocs, serverTimestamp };
 </script>
 
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,Inter,Roboto}
-  /* Vollbild-Kamera-Video */
-  #videoBg{position:fixed;inset:0;object-fit:cover;width:100%;height:100%;z-index:0;background:#000}
-  /* UI */
-  #overlay{position:fixed;inset:0;display:grid;place-items:center;background:#000b;z-index:10;text-align:center;padding:16px}
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,Segoe UI,Inter,Roboto,sans-serif}
+  #overlay{position:fixed;inset:0;display:grid;place-items:center;background:#000c;z-index:10;text-align:center;padding:16px}
   .btn{padding:12px 14px;border:0;border-radius:12px;font-weight:800;color:#fff;background:#0ea5e9;margin:0 6px;cursor:pointer}
-  #status{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);background:#000a;padding:8px 12px;border-radius:10px;z-index:9;font-weight:700}
-  #hud{position:fixed;top:84px;left:50%;transform:translateX(-50%);z-index:9;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
+  #status{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);background:#000d;padding:10px 14px;border-radius:10px;z-index:5;white-space:nowrap;font-weight:700}
+  #hud{position:fixed;top:84px;left:50%;transform:translateX(-50%);z-index:6;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
   #arrow{width:96px;height:96px;filter:drop-shadow(0 0 8px #00ffff);transition:transform 80ms linear}
-  #dist{font-size:18px;font-weight:900;background:#000a;padding:8px 12px;border-radius:999px}
-  #corner{position:fixed;top:12px;right:12px;z-index:9;display:flex;gap:8px;align-items:center}
-  .chip{background:#000a;border:1px solid #1f2937;color:#fff;padding:8px 10px;border-radius:10px;font-size:12px}
-  #leftBtns{position:fixed;top:12px;left:12px;z-index:9;display:flex;gap:8px;flex-wrap:wrap}
-  #routeBtn{background:#10b981}
-  /* A-Frame Szene liegt über dem Video */
-  a-scene{position:fixed;inset:0;z-index:1;pointer-events:none}
+  #dist{font-size:18px;font-weight:900;background:#000c;padding:8px 12px;border-radius:999px}
+  #corner{position:fixed;top:12px;right:12px;z-index:7;display:flex;gap:8px;align-items:center}
+  .chip{background:#000d;border:1px solid #1f2937;color:#fff;padding:8px 10px;border-radius:10px;font-size:12px}
 </style>
 </head>
 <body>
 
-<!-- Kamera-Hintergrund -->
-<video id="videoBg" autoplay playsinline muted></video>
-
-<!-- A-Frame Szene (ohne AR.js) -->
-<a-scene embedded renderer="antialias:true; alpha:true" background="transparent">
-  <!-- Lichter für sichtbare Materialien -->
-  <a-entity light="type:ambient; intensity:1"></a-entity>
-  <a-entity light="type:directional; intensity:0.6" position="1 2 1"></a-entity>
-
-  <!-- Gruppe, die relativ zur Kamera ausgerichtet wird -->
-  <a-entity id="targetGroup" position="0 0 -10">
-    <!-- Leucht-Säule -->
-    <a-cylinder id="beam" radius="0.8" height="18" position="0 9 0"
-      material="color:#00ffff; opacity:0.28; transparent:true; side:double"
-      animation__fade="property=material.opacity; dir=alternate; to:0.45; dur:1400; loop:true; easing=easeInOutSine"></a-cylinder>
-
-    <!-- Riesenwürfel (6m) -->
-    <a-box id="cube" width="6" height="6" depth="6" position="0 3 0"
-      material="color:#00ffff; opacity:0.95; shader:flat; side:double"
-      animation__rot="property=rotation; to:0 360 0; loop:true; dur:12000; easing=linear"></a-box>
-
-    <!-- Bodenring -->
-    <a-ring radius-inner="3.0" radius-outer="3.6" position="0 0.15 0" rotation="-90 0 0"
-      material="color:#00ffff; shader:flat; opacity:0.95; transparent:true"
-      animation__pulse="property=scale; to=1.08 1.08 1; dir=alternate; dur:800; loop:true; easing=easeInOutSine"></a-ring>
-
-    <!-- Label -->
-    <a-text id="label" value="Spot" color="#00ffff" position="0 7 0" width="8" align="center"></a-text>
-  </a-entity>
-
-  <!-- Kamera (nur für A-Frame Controls, nicht für echtes AR) -->
-  <a-entity position="0 1.6 0">
-    <a-camera wasd-controls-enabled="false" look-controls="touchEnabled:true; mouseEnabled:false"></a-camera>
-  </a-entity>
-</a-scene>
-
-<!-- UI -->
 <div id="overlay">
   <div>
-    <h1 style="margin:0 0 8px">Pseudo-AR Geo Navigator</h1>
+    <h1 style="margin:0 0 8px">Geo-AR starten</h1>
     <p style="opacity:.9;max-width:640px;margin:0 auto 14px">
-      Zeigt dir einen <b>riesigen Beacon</b> in <u>Richtung des nächsten Spots</u> vor die Kamera – ganz ohne AR.js.<br>
-      <b>Spot setzen</b> speichert deinen Standort (PW: <code>1234</code>) in Firestore.
+      Erlaube <b>Kamera</b>, <b>Standort</b> und ggf. <b>Bewegungssensor</b> (iOS).<br>
+      <b>Los geht’s</b> zeigt Spots + HUD (Richtung & Entfernung).<br>
+      <b>Spot setzen</b> speichert deinen Standort als neuen Spot (PW: <code>1234</code>).
     </p>
     <button id="start" class="btn">Los geht’s</button>
-    <button id="setSpot" class="btn" style="background:#ef4444">Spot setzen (Admin)</button>
+    <button id="admin" class="btn" style="background:#ef4444">Spot setzen (Admin)</button>
   </div>
-</div>
-
-<div id="leftBtns">
-  <button id="routeBtn" class="btn" disabled>Route (Maps)</button>
 </div>
 
 <div id="corner">
@@ -113,175 +72,215 @@
 </div>
 
 <div id="status">Bereit…</div>
+<div id="mount"></div>
 
 <script type="module">
-/* Firebase Handles */
+/*** Firebase handles ***/
 const { collection, addDoc, getDocs, serverTimestamp } = window._fs;
 const db = window._db;
 
-/* UI Refs */
+/*** UI-Refs ***/
+const mount    = document.getElementById('mount');
 const overlay  = document.getElementById('overlay');
 const statusEl = document.getElementById('status');
-const videoBg  = document.getElementById('videoBg');
 const arrowEl  = document.getElementById('arrow');
 const distEl   = document.getElementById('dist');
 const nearestNameEl = document.getElementById('nearestName');
-const routeBtn = document.getElementById('routeBtn');
-const targetGroup = document.getElementById('targetGroup');
-const labelEl  = document.getElementById('label');
 
-/* Bildquelle falls du später Textur willst */
-// const IMG_SRC = "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg";
+/*** Konfiguration ***/
+const IMG_SRC   = "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg";
+const BIG_SCALE = "34 25.5 1";
 
-/* Feste Spots (deine) + Remote */
+/* Feste Spots + deine 2 neuen */
 const BASE_TARGETS = [
   { name: 'Altstadt-Spot',         lat: 48.366184, lon: 10.867701 },
   { name: 'Stettenstraße 7',       lat: 48.368905, lon: 10.898445 },
   { name: 'Neuer Spot',            lat: 48.36630,  lon: 10.86781  },
   { name: 'Gabelsbergerstraße 64', lat: 48.33598,  lon: 10.86728  }
 ];
-let REMOTE_TARGETS = [];
-let currentNearest = null;
-let deviceHeadingDeg = null;
-let geoWatchId = null;
+let REMOTE_TARGETS = []; // Firestore
 
-/* Start */
-document.getElementById('start').addEventListener('click', startApp);
-document.getElementById('setSpot').addEventListener('click', setSpotAdmin);
-routeBtn.addEventListener('click', openRoute);
+/*** State ***/
+let sceneEl, started=false, deviceHeadingDeg=null, geoWatchId=null;
 
-async function startApp(){
-  overlay.style.display='none';
-  await startCameraBg();
-  startHeadingListeners();
-  await ensureGeoWatch();
-  // Lade Remote Spots
-  await loadRemoteSpots();
-  statusEl.textContent = 'Bereit. Bewege dich/rotiere leicht, der Beacon zeigt zum nächsten Spot.';
-}
+/*** Buttons ***/
+document.getElementById('start').addEventListener('click', startViewer);
+document.getElementById('admin').addEventListener('click', startAdmin);
 
-async function setSpotAdmin(){
-  const pw = prompt('Admin-Passwort:');
-  if(pw!=='1234'){ alert('Falsches Passwort'); return; }
-  if(!('geolocation' in navigator)){ alert('Geolocation nicht unterstützt'); return; }
-  navigator.geolocation.getCurrentPosition(async pos=>{
-    try{
-      await addDoc(collection(db,'spots'),{
-        name:'Echo der Gedanken',
-        lat: Number(pos.coords.latitude.toFixed(6)),
-        lon: Number(pos.coords.longitude.toFixed(6)),
-        createdAt: serverTimestamp()
-      });
-      alert('Spot gespeichert! Beim nächsten Start sichtbar.');
-    }catch(e){ alert('Fehler: '+e.message); }
-  }, err=>alert('Standortfehler: '+err.message), {enableHighAccuracy:true});
-}
-
-/* Kamera-Hintergrund */
-async function startCameraBg(){
+/*** Start: Viewer ***/
+async function startViewer(){
   try{
-    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}, audio:false});
-    videoBg.srcObject = stream;
+    await ensureCameraAndMotion();
+    ensureScene();
+    overlay.style.display='none';
+    await ensureGeoWatch();                // erster GPS-Fix
+    // Feste + Remote-Spots
+    BASE_TARGETS.forEach(t => appendSpotEntity(t));
+    await loadRemoteSpots();
+    REMOTE_TARGETS.forEach(t => appendSpotEntity(t));
+    started=true;
+    statusEl.textContent='Viewer aktiv. HUD zeigt Richtung & Entfernung.';
   }catch(e){
-    alert('Kamera kann nicht gestartet werden: '+e.message);
+    statusEl.textContent='Start-Fehler: '+e.message;
   }
 }
 
-/* Heading / Kompass */
-function startHeadingListeners(){
-  // iOS Permission Dialog ggf. erforderlich – iOS: Einstellungen > Safari > Bewegung & Orientierung
+/*** Start: Admin (Spot speichern) ***/
+async function startAdmin(){
+  const pw = prompt('Admin-Passwort:');
+  if(pw!=='1234'){ alert('Falsches Passwort'); return; }
+
   try{
-    if (typeof DeviceMotionEvent?.requestPermission === 'function'){ DeviceMotionEvent.requestPermission().catch(()=>{}); }
-    if (typeof DeviceOrientationEvent?.requestPermission === 'function'){ DeviceOrientationEvent.requestPermission().catch(()=>{}); }
-  }catch(e){}
-  window.addEventListener('deviceorientation', e=>{
-    if (typeof e.webkitCompassHeading === 'number'){
-      deviceHeadingDeg = e.webkitCompassHeading;
-    }else if (e.absolute === true && typeof e.alpha === 'number'){
-      deviceHeadingDeg = 360 - e.alpha;
-    }
-  }, true);
+    await ensureCameraAndMotion();
+    ensureScene();
+    overlay.style.display='none';
+    const pos = await getOnceLocation();
+    const { latitude, longitude, accuracy } = pos.coords;
+
+    await addDoc(collection(db,'spots'),{
+      name:'Echo der Gedanken',
+      img: IMG_SRC,
+      lat: Number(latitude.toFixed(6)),
+      lon: Number(longitude.toFixed(6)),
+      createdAt: serverTimestamp()
+    });
+
+    // sofort lokal anzeigen
+    appendSpotEntity({ name:'Echo der Gedanken', img:IMG_SRC, lat:latitude, lon:longitude });
+
+    statusEl.textContent = `Gespeichert: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} (±${Math.round(accuracy)} m)`;
+  }catch(e){
+    console.error(e);
+    statusEl.textContent = 'Admin-Fehler: '+e.message;
+  }
 }
 
-/* GPS Watch + HUD Update */
-async function ensureGeoWatch(){
-  if(!('geolocation' in navigator)) throw new Error('Geolocation nicht unterstützt');
+/*** Szene (einmal) ***/
+function ensureScene(){
+  if(sceneEl) return;
+  mount.innerHTML = `
+    <a-scene embedded vr-mode-ui="enabled:false"
+      renderer="antialias:true; alpha:true"
+      arjs="sourceType: webcam; videoTexture:true; trackingMethod: best; facingMode: environment;">
+      <a-camera gps-camera="gpsMinDistance:0; gpsTimeInterval:1000" rotation-reader></a-camera>
+    </a-scene>`;
+  sceneEl = document.querySelector('a-scene');
+  startHeadingListeners();
+}
+
+/*** Geo-Entity  ✅ jetzt mit look-at + side:double ***/
+function appendSpotEntity(d){
+  const el=document.createElement('a-entity');
+  el.setAttribute('gps-entity-place',`latitude: ${d.lat}; longitude: ${d.lon};`);
+
+  const plane = document.createElement('a-plane');
+  plane.setAttribute('width','36');
+  plane.setAttribute('height','27');
+  plane.setAttribute('position','0 0 -0.02');
+  plane.setAttribute('material','shader: flat; color: #00ffff; opacity: 0.12; transparent:true; side: double');
+  plane.setAttribute('look-at','[gps-camera]');
+
+  const img = document.createElement('a-image');
+  img.setAttribute('src', d.img||IMG_SRC);
+  img.setAttribute('scale', BIG_SCALE);
+  img.setAttribute('material','shader: flat; opacity:1; side: double');
+  img.setAttribute('look-at','[gps-camera]');
+
+  const ring = document.createElement('a-ring');
+  ring.setAttribute('radius-inner','17');
+  ring.setAttribute('radius-outer','17.8');
+  ring.setAttribute('position','0 0 0.02');
+  ring.setAttribute('material','color:#00ffff; shader:flat; opacity:0.95; transparent:true; side: double');
+  ring.setAttribute('animation__pulse','property=scale; to=1.06 1.06 1; dir=alternate; dur=700; loop=true; easing=easeInOutSine');
+
+  el.appendChild(plane);
+  el.appendChild(img);
+  el.appendChild(ring);
+
+  sceneEl.appendChild(el);
+}
+
+/*** Firestore laden ***/
+async function loadRemoteSpots(){
+  try{
+    const snap = await getDocs(collection(db,'spots'));
+    REMOTE_TARGETS = snap.docs.map(d=>{
+      const x=d.data(); return { name:x.name||'Spot', img:x.img||IMG_SRC, lat:x.lat, lon:x.lon };
+    });
+  }catch(e){
+    console.warn('Spots laden fehlschlag:', e);
+  }
+}
+
+/*** Kamera + Sensoren ***/
+async function ensureCameraAndMotion(){
+  await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
+  try{
+    if(typeof DeviceMotionEvent?.requestPermission === 'function'){ await DeviceMotionEvent.requestPermission().catch(()=>{}); }
+    if(typeof DeviceOrientationEvent?.requestPermission === 'function'){ await DeviceOrientationEvent.requestPermission().catch(()=>{}); }
+  }catch(e){}
+}
+
+/*** GPS ***/
+function getOnceLocation(){
+  return new Promise((res,rej)=>{
+    if(!('geolocation' in navigator)) return rej(new Error('Geolocation nicht unterstützt'));
+    navigator.geolocation.getCurrentPosition(res, e=>rej(new Error(e.message)),
+      { enableHighAccuracy:true, timeout:15000, maximumAge:0 });
+  });
+}
+function ensureGeoWatch(){
   return new Promise((resolve,reject)=>{
+    if(!('geolocation' in navigator)) return reject(new Error('Geolocation nicht unterstützt'));
     navigator.geolocation.getCurrentPosition(p=>{
-      updateHud(p.coords);
       if(geoWatchId!=null) navigator.geolocation.clearWatch(geoWatchId);
       geoWatchId = navigator.geolocation.watchPosition(
-        pos=>updateHud(pos.coords),
+        pos=>{ updateHud(pos.coords); },
         err=>{ statusEl.textContent='GPS-Fehler: '+err.message; },
         { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
       );
+      updateHud(p.coords);
       resolve();
     },err=>reject(err),{ enableHighAccuracy:true, timeout:15000, maximumAge:0 });
   });
 }
 
-/* Firestore laden */
-async function loadRemoteSpots(){
-  try{
-    const snap = await getDocs(collection(db,'spots'));
-    REMOTE_TARGETS = snap.docs.map(d=>{
-      const x=d.data(); return { name:x.name||'Spot', lat:x.lat, lon:x.lon };
-    });
-    statusEl.textContent = `Spots geladen: ${REMOTE_TARGETS.length + BASE_TARGETS.length}`;
-  }catch(e){
-    statusEl.textContent = 'Spots laden fehlgeschlagen: '+e.message;
-  }
-}
-
-/* HUD / Beacon-Ausrichtung (Pseudo-AR) */
+/*** HUD: Distanz + Richtung ***/
 function updateHud(coords){
   const all=[...BASE_TARGETS, ...REMOTE_TARGETS];
   if(!all.length) return;
 
   const { latitude, longitude, accuracy } = coords;
-  const entries = all.map(t=>{
-    const d = distM(latitude, longitude, t.lat, t.lon);
-    const brg = bearing(latitude, longitude, t.lat, t.lon);
-    return {t,d,brg};
-  }).sort((a,b)=>a.d-b.d);
+  const nearest = all
+    .map(t=>({ t, d: distM(latitude, longitude, t.lat, t.lon), brg: bearing(latitude, longitude, t.lat, t.lon) }))
+    .sort((a,b)=>a.d-b.d)[0];
 
-  const nearest = entries[0];
-  currentNearest = nearest.t;
-
-  // HUD
   nearestNameEl.textContent = nearest.t.name || 'Spot';
   const txt = nearest.d>=1000 ? (nearest.d/1000).toFixed(2)+' km' : Math.round(nearest.d)+' m';
   distEl.textContent = `Entfernung: ${txt} · GPS ±${Math.round(accuracy)} m`;
-  routeBtn.disabled = false;
 
-  // Pfeil drehen (Kompass)
   if (deviceHeadingDeg!=null){
     const turn=((nearest.brg - deviceHeadingDeg)+360)%360;
     arrowEl.style.transform=`rotate(${turn}deg)`;
   }
-
-  // 🎯 Pseudo-AR Platzierung:
-  // Wir drehen die Zielgruppe horizontal um die Y-Achse relativ zur Kamera,
-  // so dass sie in Richtung des Bearings zeigt. Distanz: 10 m.
-  const turnY = (deviceHeadingDeg!=null)
-    ? ((nearest.brg - deviceHeadingDeg)+360)%360
-    : nearest.brg; // falls kein Kompass, immerhin grob Nordenbasiert
-  targetGroup.setAttribute('rotation', `0 ${turnY} 0`);
-  targetGroup.setAttribute('position', '0 0 -10'); // 10 m „vor“ Blickrichtung
-  labelEl.setAttribute('value', nearest.t.name || 'Spot');
-
-  statusEl.textContent = `Kurs: ${nearest.brg.toFixed(0)}° · Heading: ${deviceHeadingDeg!=null?deviceHeadingDeg.toFixed(0)+'°':'–'} · Distanz: ${txt}`;
+  statusEl.textContent = `Kurs: ${nearest.brg.toFixed(0)}° · Heading: ${deviceHeadingDeg!=null?deviceHeadingDeg.toFixed(0)+'°':'–'}`;
 }
 
-/* Route öffnen */
-function openRoute(){
-  if(!currentNearest) return;
-  const { lat, lon } = currentNearest;
-  const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=walking`;
-  window.open(url, '_blank');
+/*** Kompass ***/
+function startHeadingListeners(){
+  window.addEventListener('deviceorientation', e=>{
+    if (typeof e.webkitCompassHeading === 'number'){
+      deviceHeadingDeg = e.webkitCompassHeading; // iOS
+    }else if (e.absolute===true && typeof e.alpha === 'number'){
+      deviceHeadingDeg = 360 - e.alpha; // Android (ungefähr)
+    }
+  }, true);
+  window.addEventListener('deviceorientationabsolute', e=>{
+    if (typeof e.alpha === 'number'){ deviceHeadingDeg = 360 - e.alpha; }
+  }, true);
 }
 
-/* Geo-Hilfen */
+/*** Geo-Utils ***/
 const toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
 function distM(la1,lo1,la2,lo2){
   const R=6371e3, dLa=toRad(la2-la1), dLo=toRad(lo2-lo1);
@@ -291,10 +290,17 @@ function distM(la1,lo1,la2,lo2){
 function bearing(la1,lo1,la2,lo2){
   const φ1=toRad(la1), φ2=toRad(la2), λ1=toRad(lo1), λ2=toRad(lo2);
   const y=Math.sin(λ2-λ1)*Math.cos(φ2);
-  const x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*cos(φ2)*Math.cos(λ2-λ1);
+  const x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1);
   return (toDeg(Math.atan2(y,x))+360)%360;
 }
-function cos(x){ return Math.cos(x); }
 </script>
 </body>
 </html>
+
+
+
+
+
+
+
+
