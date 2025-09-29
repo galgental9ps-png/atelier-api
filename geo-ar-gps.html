@@ -5,8 +5,13 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Geo-AR – Diagnose + Ultra sichtbar</title>
 
+<!-- A-Frame + AR.js -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
+
+<!-- Firebase (Compat CDN, ideal für einfache HTML-Datei ohne Build-Tool) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
 
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;
@@ -54,6 +59,8 @@
     <button id="start" class="btn">Los geht’s (Geo-Spots)</button>
     <button id="spawnHere" class="btn" style="background:#10b981">Hier testen (1 m vor dir)</button>
     <button id="askGeo" class="btn" style="background:#f59e0b">Standort erlauben / neu holen</button>
+    <!-- Admin-Button -->
+    <button id="adminSet" class="btn" style="background:#ef4444">Spot setzen (Admin)</button>
     <div style="font-size:13px;opacity:.8;margin-top:10px">
       Hinweis: Standort funktioniert nur über <b>HTTPS</b> oder <b>localhost</b>. Kompass kurz kalibrieren (∞-Bewegung).
     </div>
@@ -76,16 +83,39 @@
 <div id="mount"></div>
 
 <script>
+/*** Firebase INIT (mit deiner Config) ***/
+const firebaseConfig = {
+  apiKey: "AIzaSyAd4_0zLdbI6jkjcZZUtMSWCYKP14dGHzQ",
+  authDomain: "geo-ar-2c66d.firebaseapp.com",
+  projectId: "geo-ar-2c66d",
+  storageBucket: "geo-ar-2c66d.firebasestorage.app",
+  messagingSenderId: "232770478087",
+  appId: "1:232770478087:web:d0d6cb8a585bdef5fdcaa2"
+};
+let db = null;
+try {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+} catch(e){
+  console.warn('Firebase nicht initialisiert:', e);
+}
+
 /*** Konfiguration ***/
 const IMG_SRC = 'https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg';
-const TARGETS = [
+
+// Feste Spots (deine vier)
+const BASE_TARGETS = [
   { name: 'Altstadt-Spot',             lat: 48.366184, lon: 10.867701 },
-  { name: 'Stettenstraße 7',           lat: 48.368905, lon: 10.898445 }, // 86150 Augsburg
-  { name: 'Neuer Spot',                lat: 48.36630,  lon: 10.86781  }, // hinzugefügt
-  { name: 'Gabelsbergerstraße 64',     lat: 48.33598,  lon: 10.86728  }  // hinzugefügt
+  { name: 'Stettenstraße 7',           lat: 48.368905, lon: 10.898445 },
+  { name: 'Neuer Spot',                lat: 48.36630,  lon: 10.86781  },
+  { name: 'Gabelsbergerstraße 64',     lat: 48.33598,  lon: 10.86728  }
 ];
-const BIG_SCALE  = '34 25.5 1';   // riesig
-const TEST_SCALE = '12 9 1';      // groß in 1 m
+
+// Remote-Spots aus Firestore werden hier ergänzt
+let REMOTE_TARGETS = [];
+
+const BIG_SCALE  = '34 25.5 1';   // groß draußen
+const TEST_SCALE = '12 9 1';      // groß in 1 m (Test)
 
 /*** UI-Refs ***/
 const statusEl  = document.getElementById('status');
@@ -110,6 +140,7 @@ let geoWatchId = null;
 document.getElementById('start').addEventListener('click', initGeo);
 document.getElementById('spawnHere').addEventListener('click', spawnHere);
 document.getElementById('askGeo').addEventListener('click', ensureGeoWatch);
+document.getElementById('adminSet').addEventListener('click', adminSetSpot);
 
 /*** Diagnose: HTTPS ***/
 (function checkHttps(){
@@ -118,12 +149,13 @@ document.getElementById('askGeo').addEventListener('click', ensureGeoWatch);
   httpsPill.classList.add(ok ? 'ok' : 'bad');
 })();
 
-/*** Start mit Geo-Spots ***/
+/*** Start: Geo-Spots laden und anzeigen ***/
 async function initGeo(){
   try{
     await ensureCameraAndMotion();
-    await ensureGeoWatch();            // startet watchPosition inkl. Abfrage
-    buildScene();                      // AR-Szene mit Geo-Bildern
+    await ensureGeoWatch();
+    await loadRemoteSpots();     // Firestore-Spots ziehen
+    buildScene();                // alle (BASE + REMOTE) rendern
     overlay.style.display = 'none';
     started = true;
   }catch(err){
@@ -131,55 +163,56 @@ async function initGeo(){
   }
 }
 
-/*** Nur Test-Beacon (ohne Standort) ***/
-async function spawnHere(){
+/*** Admin: aktuellen Ort als Spot speichern ***/
+async function adminSetSpot(){
   try{
-    if(!started){
-      await ensureCameraAndMotion();   // Kamera/Sensor
-      buildScene();
-      overlay.style.display = 'none';
-      started = true;
+    const pw = prompt('Admin-Passwort eingeben:');
+    if (pw !== '1234'){ alert('Falsches Passwort'); return; }
+
+    await ensureCameraAndMotion();
+    const pos = await getOnceLocation();
+    const { latitude, longitude, accuracy } = pos.coords;
+
+    if(!db){
+      alert('Firebase nicht konfiguriert – kann nicht speichern.');
+      return;
     }
-    if(localImgEl){ localImgEl.remove(); }
 
-    // sehr auffälliger Beacon
-    localImgEl = document.createElement('a-entity');
+    const name = prompt('Name für den Spot:','Echo der Gedanken');
+    const docData = {
+      name: name || 'Echo der Gedanken',
+      lat: Number(latitude.toFixed(6)),
+      lon: Number(longitude.toFixed(6)),
+      img: IMG_SRC,
+      createdAt: new Date().toISOString()
+    };
+    await db.collection('spots').add(docData);
 
-    const bg = document.createElement('a-plane');
-    bg.setAttribute('width','14');
-    bg.setAttribute('height','10.5');
-    bg.setAttribute('material','shader: flat; color: #00ffff; opacity: 0.18; transparent: true');
-    bg.setAttribute('position','0 0 0');
+    statusEl.textContent = `Spot gespeichert bei ${docData.lat}, ${docData.lon} (±${Math.round(accuracy)} m).`;
 
-    const img = document.createElement('a-image');
-    img.setAttribute('src', IMG_SRC);
-    img.setAttribute('scale', TEST_SCALE);
-    img.setAttribute('material','shader: flat; opacity: 1; transparent: false');
-    img.setAttribute('look-at','[camera]');
-
-    const frame = document.createElement('a-ring');
-    frame.setAttribute('radius-inner','6.2');
-    frame.setAttribute('radius-outer','6.6');
-    frame.setAttribute('position','0 0 0.01');
-    frame.setAttribute('material','color: #00ffff; shader: flat; opacity: 0.95; transparent: true');
-    frame.setAttribute('animation__pulse','property=scale; to=1.08 1.08 1; dir=alternate; dur=600; loop=true; easing=easeInOutSine');
-
-    localImgEl.appendChild(bg);
-    localImgEl.appendChild(img);
-    localImgEl.appendChild(frame);
-
-    localImgEl.setAttribute('position','0 0 -1');   // 1 m vor dir
-    mount.querySelector('a-scene').appendChild(localImgEl);
-
-    statusEl.textContent = 'Test-Beacon 1 m vor dir platziert (ohne Standort).';
+    // Direkt in diese Session übernehmen
+    REMOTE_TARGETS.push({ name: docData.name, lat: docData.lat, lon: docData.lon, img: docData.img });
+    rebuildSceneIfStarted();
+    alert('Gespeichert! Öffne den Link normal, um den Spot mit „Los geht’s“ zu sehen.');
   }catch(err){
-    statusEl.textContent = 'Fehler beim Testmodus: ' + err.message;
+    console.error(err);
+    statusEl.textContent = 'Admin-Fehler: ' + err.message;
+    alert('Fehler beim Speichern: '+err.message);
   }
+}
+
+/*** Firestore-Spots laden ***/
+async function loadRemoteSpots(){
+  if(!db){ REMOTE_TARGETS = []; return; }
+  const snap = await db.collection('spots').get();
+  REMOTE_TARGETS = snap.docs.map(d=>{
+    const x = d.data();
+    return { name: x.name || 'Spot', lat: x.lat, lon: x.lon, img: x.img || IMG_SRC };
+  });
 }
 
 /*** Kamera + Sensoren ***/
 async function ensureCameraAndMotion(){
-  // Kamera
   try{
     await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
     camPill.textContent = 'Kamera: OK';
@@ -189,7 +222,6 @@ async function ensureCameraAndMotion(){
     camPill.classList.add('bad');
     throw err;
   }
-  // Sensor-Permission (iOS)
   try{
     if (typeof DeviceMotionEvent?.requestPermission === 'function') {
       await DeviceMotionEvent.requestPermission().catch(()=>{});
@@ -206,14 +238,22 @@ async function ensureCameraAndMotion(){
   startHeadingListeners();
 }
 
-/*** Standort-Watch starten (mit klarer Fehleranzeige) ***/
+/*** Standort einmalig ***/
+function getOnceLocation(){
+  return new Promise((res,rej)=>{
+    if(!('geolocation' in navigator)) return rej(new Error('Geolocation nicht unterstützt'));
+    navigator.geolocation.getCurrentPosition(res, e=>rej(new Error('Standort: '+e.message)),
+      { enableHighAccuracy:true, timeout:15000, maximumAge:0 });
+  });
+}
+
+/*** Standort-Watch ***/
 async function ensureGeoWatch(){
   if(!('geolocation' in navigator)){
     geoPill.textContent = 'Standort: nicht unterstützt';
     geoPill.classList.add('bad');
     throw new Error('Geolocation nicht unterstützt');
   }
-  // Einmalige Abfrage triggert die Permission UI
   await new Promise((res,rej)=>{
     navigator.geolocation.getCurrentPosition(
       pos => { updatePosPill(pos.coords); res(); },
@@ -221,7 +261,6 @@ async function ensureGeoWatch(){
       { enableHighAccuracy:true, timeout:12000, maximumAge:0 }
     );
   });
-  // Laufender Watch
   if(geoWatchId!=null){ navigator.geolocation.clearWatch(geoWatchId); }
   geoWatchId = navigator.geolocation.watchPosition(
     pos => { 
@@ -235,19 +274,22 @@ async function ensureGeoWatch(){
   );
 }
 
-/*** AR-Szene ***/
+/*** AR-Szene bauen ***/
 function buildScene(){
+  const allTargets = [...BASE_TARGETS, ...REMOTE_TARGETS];
+
   let imagesHtml = `
     <!-- Debug-Würfel 3 m vor dir -->
     <a-box color="#00ffff" depth="1.2" height="1.2" width="1.2" position="0 0 -3"
            material="shader: flat; opacity: 0.9"></a-box>
   `;
-  TARGETS.forEach((t,i)=>{
+  allTargets.forEach((t,i)=>{
+    const imgSrc = t.img || IMG_SRC;
     imagesHtml += `
       <a-entity id="artTarget${i}" gps-entity-place="latitude: ${t.lat}; longitude: ${t.lon};">
         <a-plane width="36" height="27" position="0 0 -0.02"
                  material="shader: flat; color: #00ffff; opacity: 0.12; transparent: true"></a-plane>
-        <a-image src="${IMG_SRC}" scale="${BIG_SCALE}" look-at="[gps-camera]"
+        <a-image src="${imgSrc}" scale="${BIG_SCALE}" look-at="[gps-camera]"
                  material="shader: flat; opacity: 1"></a-image>
         <a-ring radius-inner="17" radius-outer="17.8" position="0 0 0.02"
                 material="color: #00ffff; shader: flat; opacity: 0.95; transparent: true"
@@ -266,7 +308,11 @@ function buildScene(){
   sceneEl = document.querySelector('a-scene');
 }
 
-/*** HUD-Logik ***/
+function rebuildSceneIfStarted(){
+  if(started){ buildScene(); }
+}
+
+/*** HUD-Logik (Entfernung + Pfeil) ***/
 function updateHudWithNearest(coords){
   const R=6371e3, toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
   const distM = (la1,lo1,la2,lo2)=>{
@@ -283,7 +329,11 @@ function updateHudWithNearest(coords){
   };
 
   const { latitude, longitude, accuracy } = coords;
-  const entries = TARGETS.map(t => ({
+
+  const allTargets = [...BASE_TARGETS, ...REMOTE_TARGETS];
+  if(allTargets.length === 0){ return; }
+
+  const entries = allTargets.map(t => ({
     name: t.name,
     d: distM(latitude, longitude, t.lat, t.lon),
     brg: bearingDeg(latitude, longitude, t.lat, t.lon)
@@ -344,6 +394,51 @@ function handleGeoError(err){
   }
   geoPill.textContent = txt;
   statusEl.textContent = txt + ' – nutze den Button „Standort erlauben / neu holen“.';
+}
+
+/*** Test-Beacon (ohne GPS) ***/
+async function spawnHere(){
+  try{
+    if(!started){
+      await ensureCameraAndMotion();
+      buildScene();
+      overlay.style.display = 'none';
+      started = true;
+    }
+    if(localImgEl){ localImgEl.remove(); }
+
+    localImgEl = document.createElement('a-entity');
+
+    const bg = document.createElement('a-plane');
+    bg.setAttribute('width','14');
+    bg.setAttribute('height','10.5');
+    bg.setAttribute('material','shader: flat; color: #00ffff; opacity: 0.18; transparent: true');
+    bg.setAttribute('position','0 0 0');
+
+    const img = document.createElement('a-image');
+    img.setAttribute('src', IMG_SRC);
+    img.setAttribute('scale', TEST_SCALE);
+    img.setAttribute('material','shader: flat; opacity: 1; transparent: false');
+    img.setAttribute('look-at','[camera]');
+
+    const frame = document.createElement('a-ring');
+    frame.setAttribute('radius-inner','6.2');
+    frame.setAttribute('radius-outer','6.6');
+    frame.setAttribute('position','0 0 0.01');
+    frame.setAttribute('material','color: #00ffff; shader: flat; opacity: 0.95; transparent: true');
+    frame.setAttribute('animation__pulse','property=scale; to=1.08 1.08 1; dir=alternate; dur=600; loop=true; easing=easeInOutSine');
+
+    localImgEl.appendChild(bg);
+    localImgEl.appendChild(img);
+    localImgEl.appendChild(frame);
+
+    localImgEl.setAttribute('position','0 0 -1');   // 1 m vor dir
+    mount.querySelector('a-scene').appendChild(localImgEl);
+
+    statusEl.textContent = 'Test-Beacon 1 m vor dir platziert (ohne Standort).';
+  }catch(err){
+    statusEl.textContent = 'Fehler beim Testmodus: ' + err.message;
+  }
 }
 </script>
 </body>
