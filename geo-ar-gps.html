@@ -3,19 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Geo-AR mit HUD & Firebase (sichtbar fix)</title>
+<title>Geo-AR Würfel (HUD & Firebase)</title>
 
 <!-- A-Frame + AR.js -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
-<!-- ✅ Billboarding-Component (wichtig, damit das Bild dich immer anschaut) -->
+<!-- (Optional) look-at für andere Formen; Würfel braucht es nicht unbedingt -->
 <script src="https://unpkg.com/aframe-look-at-component@1.0.0/dist/aframe-look-at-component.min.js"></script>
 
 <!-- Firebase (ESM) -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
   import { getFirestore, collection, addDoc, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
-
   const firebaseConfig = {
     apiKey: "AIzaSyAd4_0zLdbI6jkjcZZUtMSWCYKP14dGHzQ",
     authDomain: "geo-ar-2c66d.firebaseapp.com",
@@ -24,18 +23,19 @@
     messagingSenderId: "232770478087",
     appId: "1:232770478087:web:d0d6cb8a585bdef5fdcaa2"
   };
-
   const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
+  const db  = getFirestore(app);
   window._db = db;
   window._fs = { collection, addDoc, getDocs, serverTimestamp };
 </script>
 
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,Segoe UI,Inter,Roboto,sans-serif}
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;
+    font-family:system-ui, -apple-system, Segoe UI, Inter, Roboto, sans-serif}
   #overlay{position:fixed;inset:0;display:grid;place-items:center;background:#000c;z-index:10;text-align:center;padding:16px}
   .btn{padding:12px 14px;border:0;border-radius:12px;font-weight:800;color:#fff;background:#0ea5e9;margin:0 6px;cursor:pointer}
-  #status{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);background:#000d;padding:10px 14px;border-radius:10px;z-index:5;white-space:nowrap;font-weight:700}
+  #status{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);
+    background:#000d;padding:10px 14px;border-radius:10px;z-index:5;white-space:nowrap;font-weight:700}
   #hud{position:fixed;top:84px;left:50%;transform:translateX(-50%);z-index:6;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
   #arrow{width:96px;height:96px;filter:drop-shadow(0 0 8px #00ffff);transition:transform 80ms linear}
   #dist{font-size:18px;font-weight:900;background:#000c;padding:8px 12px;border-radius:999px}
@@ -50,7 +50,7 @@
     <h1 style="margin:0 0 8px">Geo-AR starten</h1>
     <p style="opacity:.9;max-width:640px;margin:0 auto 14px">
       Erlaube <b>Kamera</b>, <b>Standort</b> und ggf. <b>Bewegungssensor</b> (iOS).<br>
-      <b>Los geht’s</b> zeigt Spots + HUD (Richtung & Entfernung).<br>
+      <b>Los geht’s</b> zeigt Spots als <u>große drehende Würfel</u> + HUD (Richtung/Entfernung).<br>
       <b>Spot setzen</b> speichert deinen Standort als neuen Spot (PW: <code>1234</code>).
     </p>
     <button id="start" class="btn">Los geht’s</button>
@@ -85,11 +85,10 @@ const arrowEl  = document.getElementById('arrow');
 const distEl   = document.getElementById('dist');
 const nearestNameEl = document.getElementById('nearestName');
 
-/*** Konfiguration ***/
-const IMG_SRC   = "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg";
-const BIG_SCALE = "34 25.5 1";
+/*** Bildquelle (Textur) ***/
+const IMG_SRC = "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg";
 
-/* Feste Spots + deine 2 neuen */
+/*** Feste Spots (inkl. deiner 2 neuen) ***/
 const BASE_TARGETS = [
   { name: 'Altstadt-Spot',         lat: 48.366184, lon: 10.867701 },
   { name: 'Stettenstraße 7',       lat: 48.368905, lon: 10.898445 },
@@ -111,8 +110,7 @@ async function startViewer(){
     await ensureCameraAndMotion();
     ensureScene();
     overlay.style.display='none';
-    await ensureGeoWatch();                // erster GPS-Fix
-    // Feste + Remote-Spots
+    await ensureGeoWatch();                     // erster GPS-Fix
     BASE_TARGETS.forEach(t => appendSpotEntity(t));
     await loadRemoteSpots();
     REMOTE_TARGETS.forEach(t => appendSpotEntity(t));
@@ -127,7 +125,6 @@ async function startViewer(){
 async function startAdmin(){
   const pw = prompt('Admin-Passwort:');
   if(pw!=='1234'){ alert('Falsches Passwort'); return; }
-
   try{
     await ensureCameraAndMotion();
     ensureScene();
@@ -143,9 +140,8 @@ async function startAdmin(){
       createdAt: serverTimestamp()
     });
 
-    // sofort lokal anzeigen
+    // Sofort lokal anzeigen
     appendSpotEntity({ name:'Echo der Gedanken', img:IMG_SRC, lat:latitude, lon:longitude });
-
     statusEl.textContent = `Gespeichert: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} (±${Math.round(accuracy)} m)`;
   }catch(e){
     console.error(e);
@@ -166,36 +162,32 @@ function ensureScene(){
   startHeadingListeners();
 }
 
-/*** Geo-Entity  ✅ jetzt mit look-at + side:double ***/
+/*** GEO-ENTITY: WÜRFEL (groß, auffällig, drehend, leicht angehoben) ***/
 function appendSpotEntity(d){
-  const el=document.createElement('a-entity');
-  el.setAttribute('gps-entity-place',`latitude: ${d.lat}; longitude: ${d.lon};`);
+  const parent = document.createElement('a-entity');
+  parent.setAttribute('gps-entity-place', `latitude: ${d.lat}; longitude: ${d.lon};`);
 
-  const plane = document.createElement('a-plane');
-  plane.setAttribute('width','36');
-  plane.setAttribute('height','27');
-  plane.setAttribute('position','0 0 -0.02');
-  plane.setAttribute('material','shader: flat; color: #00ffff; opacity: 0.12; transparent:true; side: double');
-  plane.setAttribute('look-at','[gps-camera]');
+  // 3×3×3 m Würfel, 2 m über Boden, mit deiner Bild-Textur
+  const box = document.createElement('a-box');
+  box.setAttribute('width',  '3');
+  box.setAttribute('height', '3');
+  box.setAttribute('depth',  '3');
+  box.setAttribute('position', '0 2 0'); // leicht in die Luft, damit nicht im Boden steckt
+  box.setAttribute('material', `src: ${d.img||IMG_SRC}; color: #ffffff; roughness: 1; metalness: 0; side: double; shader: standard;`);
+  box.setAttribute('animation__rot', 'property=rotation; to=0 360 0; loop=true; dur=8000; easing=linear');
 
-  const img = document.createElement('a-image');
-  img.setAttribute('src', d.img||IMG_SRC);
-  img.setAttribute('scale', BIG_SCALE);
-  img.setAttribute('material','shader: flat; opacity:1; side: double');
-  img.setAttribute('look-at','[gps-camera]');
-
+  // Leuchtender Ring unten als Beacon (0.2 m über Boden)
   const ring = document.createElement('a-ring');
-  ring.setAttribute('radius-inner','17');
-  ring.setAttribute('radius-outer','17.8');
-  ring.setAttribute('position','0 0 0.02');
-  ring.setAttribute('material','color:#00ffff; shader:flat; opacity:0.95; transparent:true; side: double');
-  ring.setAttribute('animation__pulse','property=scale; to=1.06 1.06 1; dir=alternate; dur=700; loop=true; easing=easeInOutSine');
+  ring.setAttribute('radius-inner','2.2');
+  ring.setAttribute('radius-outer','2.6');
+  ring.setAttribute('position','0 0.2 0');
+  ring.setAttribute('rotation','-90 0 0');
+  ring.setAttribute('material','color:#00ffff; shader:flat; opacity:0.9; transparent:true');
+  ring.setAttribute('animation__pulse','property=scale; to=1.08 1.08 1; dir=alternate; dur=700; loop=true; easing=easeInOutSine');
 
-  el.appendChild(plane);
-  el.appendChild(img);
-  el.appendChild(ring);
-
-  sceneEl.appendChild(el);
+  parent.appendChild(box);
+  parent.appendChild(ring);
+  sceneEl.appendChild(parent);
 }
 
 /*** Firestore laden ***/
