@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>WebAR – Tippen zum Platzieren (Hit‑Test)</title>
+<title>WebAR – Bild nahe Kamera (Sofort sichtbar)</title>
 
 <!-- A‑Frame (WebXR) -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
@@ -13,15 +13,17 @@
   #ui{position:fixed;inset:auto 0 0 0;display:flex;gap:10px;justify-content:center;padding:12px;background:linear-gradient(180deg,transparent,rgba(0,0,0,.6));z-index:10}
   .btn{padding:10px 14px;border:0;border-radius:12px;font-weight:800;color:#fff;background:#0ea5e9;cursor:pointer}
   #hint{position:fixed;top:10px;left:50%;transform:translateX(-50%);background:#000c;padding:8px 12px;border-radius:999px;z-index:10;font-weight:700}
-  #reticle{width:44px;height:44px;border-radius:999px;border:2px solid #00ffff;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);opacity:.85;filter:drop-shadow(0 0 6px #00ffff);z-index:5}
 </style>
 </head>
 <body>
 
-<div id="hint">Bewege das Handy, bis der Kreis „einrastet“. Tippe zum Platzieren.</div>
+<div id="hint">AR startet & zeigt das Bild direkt vor der Kamera. Mit den Buttons kannst du es näher/weiter positionieren.</div>
 <div id="reticle" aria-hidden="true"></div>
 <div id="ui">
   <button id="start" class="btn">AR starten</button>
+  <button id="near" class="btn">Näher</button>
+  <button id="far" class="btn">Weiter</button>
+  <button id="center" class="btn">Zentrieren</button>
   <button id="clear" class="btn" style="background:#ef4444">Entfernen</button>
 </div>
 
@@ -49,117 +51,98 @@
 const IMG_SRC = "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg"; // Dein Bild
 const IMG_W   = 1.2;  // Breite in Metern
 const IMG_H   = 0.9;  // Höhe in Metern
+const MIN_D   = 0.4;  // Minimaler Abstand
+const MAX_D   = 4.0;  // Maximaler Abstand
+let DIST      = 1.2;  // Startabstand (sichtbar nah)
 
 // === Elemente ===
-const scene = document.querySelector('a-scene');
-const startBtn = document.getElementById('start');
-const clearBtn = document.getElementById('clear');
-const artRoot = document.getElementById('art');
-const hint = document.getElementById('hint');
-const reticle = document.getElementById('reticle');
+const scene   = document.querySelector('a-scene');
+const startBtn= document.getElementById('start');
+const nearBtn = document.getElementById('near');
+const farBtn  = document.getElementById('far');
+const centerBtn=document.getElementById('center');
+const clearBtn= document.getElementById('clear');
 
 let xrSession = null;
-let viewerSpace = null;
-let hitTestSource = null;
-let placedEl = null;
+let placedEl  = null;
 
 startBtn.addEventListener('click', async () => {
   try{
     await ensureARSession();
-    hint.textContent = 'Tippe auf den Bildschirm, um zu platzieren.';
+    ensurePlacedVisible();
+    placeInFrontOfCamera();
   }catch(e){
-    alert('AR nicht verfügbar: '+e.message+'
-Tipp: Chrome auf Android benutzen. iOS Safari unterstützt WebXR Hit‑Test noch nicht zuverlässig.');
+    alert('AR nicht verfügbar: '+e.message+'\nTipp: Chrome auf Android benutzen.');
   }
 });
 
-clearBtn.addEventListener('click', () => {
-  if (placedEl) { placedEl.parentNode.removeChild(placedEl); placedEl = null; }
-});
+nearBtn.addEventListener('click', ()=>{ DIST = Math.max(MIN_D, DIST-0.2); placeInFrontOfCamera(); });
+farBtn .addEventListener('click', ()=>{ DIST = Math.min(MAX_D, DIST+0.2); placeInFrontOfCamera(); });
+centerBtn.addEventListener('click', ()=>{ placeInFrontOfCamera(true); });
+clearBtn.addEventListener('click', ()=>{ if(placedEl){ placedEl.remove(); placedEl=null; }});
 
 async function ensureARSession(){
   if (!navigator.xr) throw new Error('WebXR nicht vorhanden');
   const supported = await navigator.xr.isSessionSupported('immersive-ar');
   if (!supported) throw new Error('immersive-ar wird nicht unterstützt');
-
-  xrSession = await navigator.xr.requestSession('immersive-ar', {
+  const session = await navigator.xr.requestSession('immersive-ar', {
     requiredFeatures: ['local'],
-    optionalFeatures: ['hit-test', 'dom-overlay'],
+    optionalFeatures: ['dom-overlay'],
     domOverlay: { root: document.body }
   });
-
-  scene.renderer.xr.setSession(xrSession);
-
+  scene.renderer.xr.setSession(session);
   const gl = scene.renderer.getContext();
   if (gl.makeXRCompatible) await gl.makeXRCompatible();
-
-  const refSpace = await xrSession.requestReferenceSpace('local');
-  viewerSpace = await xrSession.requestReferenceSpace('viewer');
-
-  // Hit‑Test‑Quelle
-  if (xrSession.requestHitTestSource) {
-    hitTestSource = await xrSession.requestHitTestSource({ space: viewerSpace });
-  } else if (xrSession.requestHitTestSourceForTransientInput) {
-    const sources = await xrSession.requestHitTestSourceForTransientInput({ profile: 'generic-touchscreen' });
-    hitTestSource = sources && sources[0] ? sources[0] : null;
-  }
-
-  xrSession.addEventListener('end', () => { xrSession = null; hitTestSource = null; showReticle(false); });
-
-  const onXRFrame = (time, frame) => {
-    const session = frame.session;
-    session.requestAnimationFrame(onXRFrame);
-    if (!hitTestSource) return;
-
-    const ref = refSpace;
-    const hits = frame.getHitTestResults(hitTestSource);
-    if (hits && hits.length) {
-      showReticle(true);
-    } else {
-      showReticle(false);
-    }
-  };
-  xrSession.requestAnimationFrame(onXRFrame);
-
-  // Tippen → platzieren
-  window.addEventListener('pointerdown', async () => {
-    if (!xrSession) return;
-    const ref = await xrSession.requestReferenceSpace('local');
-    const frame = await new Promise(res => xrSession.requestAnimationFrame((_, f)=>res(f)));
-    const hits = hitTestSource ? frame.getHitTestResults(hitTestSource) : null;
-    if (hits && hits.length){
-      const pose = hits[0].getPose(ref);
-      placeOrMoveAt(pose.transform.position);
-    }
-  });
+  xrSession = session;
+  xrSession.addEventListener('end', ()=>{ xrSession=null; });
 }
 
-function placeOrMoveAt(pos){
-  if (!placedEl){
-    placedEl = document.createElement('a-entity');
+function ensurePlacedVisible(){
+  if (placedEl) return;
+  placedEl = document.createElement('a-entity');
 
-    const plane = document.createElement('a-plane');
-    plane.setAttribute('width', IMG_W + 0.06);
-    plane.setAttribute('height', IMG_H + 0.06);
-    plane.setAttribute('material', 'color: #00ffff; opacity: .14; side: double; shader: flat; transparent: true');
+  const plane = document.createElement('a-plane');
+  plane.setAttribute('width', IMG_W + 0.06);
+  plane.setAttribute('height', IMG_H + 0.06);
+  plane.setAttribute('material', 'color: #00ffff; opacity: .14; side: double; shader: flat; transparent: true');
 
-    const img = document.createElement('a-image');
-    img.setAttribute('src', IMG_SRC);
-    img.setAttribute('crossorigin','anonymous');
-    img.setAttribute('width', IMG_W);
-    img.setAttribute('height', IMG_H);
+  const img = document.createElement('a-image');
+  img.setAttribute('src', IMG_SRC);
+  img.setAttribute('crossorigin','anonymous');
+  img.setAttribute('width', IMG_W);
+  img.setAttribute('height', IMG_H);
 
-    placedEl.appendChild(plane);
-    placedEl.appendChild(img);
-    artRoot.appendChild(placedEl);
-  }
-  placedEl.object3D.position.set(pos.x, pos.y + IMG_H/2, pos.z);
+  placedEl.appendChild(plane);
+  placedEl.appendChild(img);
+  scene.appendChild(placedEl);
+}
 
+function placeInFrontOfCamera(resetRotation=false){
   const cam = document.getElementById('camera').object3D;
-  placedEl.object3D.lookAt(cam.getWorldPosition(new THREE.Vector3()));
+  const worldPos = new THREE.Vector3();
+  const forward  = new THREE.Vector3();
+  cam.getWorldPosition(worldPos);
+  cam.getWorldDirection(forward);
+  // WorldDirection zeigt von Kamera nach VORN (−Z in A‑Frame/three.js). Wir multiplizieren mit DIST
+  const target = worldPos.clone().add(forward.multiplyScalar(DIST));
+
+  if (!placedEl) return;
+  placedEl.object3D.position.copy(target);
+
+  // Bild vertikal „stehend“ ausrichten & zur Kamera drehen (einfaches Billboarding)
+  const up = new THREE.Vector3(0,1,0);
+  placedEl.object3D.lookAt(worldPos.x, target.y, worldPos.z); // nur horizontaler Blick
+  if (resetRotation){
+    placedEl.object3D.rotation.x = 0; // keine Neigung
+  }
 }
 
-function showReticle(show){ reticle.style.display = show ? 'block' : 'none'; }
+// Während der AR‑Session die Position mitführen, damit es „vor dir“ bleibt, wenn du direkt nach Start läufst
+scene.addEventListener('renderstart', ()=>{
+  scene.renderer.setAnimationLoop(()=>{
+    if (xrSession && placedEl){ placeInFrontOfCamera(); }
+  });
+});
 </script>
 
 </body>
