@@ -1,213 +1,41 @@
 <!doctype html>
-<html lang="de">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>AR Black Screen Fixer – Kamera & Marker-AR Diagnose</title>
-
-<!-- A-Frame + AR.js (nur für Schritt 3) -->
-<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
-
-<style>
-  html,body{margin:0;height:100%;background:#000;color:#fff;font-family:system-ui,Inter,Roboto}
-  .wrap{max-width:880px;margin:20px auto;padding:12px}
-  .card{background:#0b0b0b;border:1px solid #222;border-radius:12px;padding:14px;margin-bottom:12px}
-  .btn{padding:10px 12px;border:0;border-radius:10px;background:#0ea5e9;color:#fff;font-weight:800;cursor:pointer}
-  .btn.alt{background:#10b981}
-  .row{display:flex;gap:10px;flex-wrap:wrap}
-  #log{font:12px/1.45 ui-monospace,Menlo,monospace;white-space:pre-wrap;background:#060606;border:1px solid #222;border-radius:8px;padding:10px;max-height:200px;overflow:auto}
-  #video{width:100%;max-height:40vh;background:#000}
-  #glcanvas{width:100%;height:240px;background:#050505;border:1px solid #222;border-radius:8px}
-  #markerLink{color:#0ea5e9}
-  a-scene{position:fixed;inset:0}
-  #stage{position:fixed;inset:0}
-  #back{position:fixed;top:12px;left:12px;z-index:5;display:none}
-  #httpsWarn{position:fixed;top:12px;right:12px;background:#7f1d1d;color:#fff;padding:6px 10px;border-radius:8px;display:none;z-index:6}
-</style>
-</head>
-<body>
-<div id="httpsWarn">⚠️ Seite läuft nicht über HTTPS – Kamera/AR kann blockiert sein.</div>
-
-<div class="wrap" id="ui">
-  <div class="card">
-    <h2 style="margin:0 0 6px">Schritt 1 – Kamera-Test (ohne AR)</h2>
-    <div class="row">
-      <button class="btn" id="startCam">Kamera starten</button>
-      <button class="btn alt" id="stopCam">Kamera stoppen</button>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>AR.js Minimal</title>
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
+    <style>
+      body,html { margin:0; height:100%; overflow:hidden; }
+      #overlay {
+        position:fixed; inset:0; background:#000d;
+        display:flex; flex-direction:column;
+        justify-content:center; align-items:center;
+        color:#fff; z-index:5;
+      }
+      button {
+        padding:16px 22px; font-size:18px; border-radius:10px;
+        background:#0ea5e9; color:#fff; border:0; cursor:pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="overlay">
+      <h2>Starte AR</h2>
+      <button id="startBtn">Los geht's</button>
     </div>
-    <p style="opacity:.8;margin:8px 0">Nutzt <code>getUserMedia</code> direkt. Wenn das nicht zeigt: Problem ist <b>nicht</b> AR.js, sondern Kamera/HTTPS/Berechtigung.</p>
-    <video id="video" autoplay playsinline muted></video>
-  </div>
 
-  <div class="card">
-    <h2 style="margin:0 0 6px">Schritt 2 – WebGL-Test</h2>
-    <p style="opacity:.8;margin:8px 0">Zeichnet ein farbiges Dreieck. Wenn hier nichts erscheint, blockiert WebGL / der Browser.</p>
-    <canvas id="glcanvas"></canvas>
-    <div style="margin-top:8px">
-      <button class="btn" id="glTest">WebGL zeichnen</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2 style="margin:0 0 6px">Schritt 3 – Marker-AR (HIRO)</h2>
-    <ol style="opacity:.85">
-      <li>Tippe auf <b>Kamera starten (Marker-AR)</b> – iOS braucht Nutzer-Tap vor der Kameranutzung.</li>
-      <li>Öffne den <a id="markerLink" href="https://raw.githubusercontent.com/AR-js-org/AR.js/master/data/images/HIRO.jpg" target="_blank">HIRO-Marker</a> auf einem anderen Gerät/Display.</li>
-      <li>Richte die Kamera darauf.</li>
-    </ol>
-    <div class="row">
-      <button class="btn" id="startAR">Kamera starten (Marker-AR)</button>
-    </div>
-    <p style="margin-top:8px;opacity:.8">Tip: Helligkeit hoch, Marker vollständig im Bild, nicht zu nah.</p>
-  </div>
-
-  <div class="card">
-    <h3 style="margin:0 0 6px">Diagnose-Log</h3>
-    <div id="log">Bereit…</div>
-  </div>
-</div>
-
-<button class="btn" id="back">Zurück zur Diagnose</button>
-<div id="stage"></div>
-
-<script>
-/* ===== Utils & Log ===== */
-const logEl = document.getElementById('log');
-function log(msg){ logEl.textContent += "\n" + msg; logEl.scrollTop = logEl.scrollHeight; console.log(msg); }
-
-if(!(location.protocol==='https:' || location.hostname==='localhost' || location.hostname==='127.0.0.1')){
-  document.getElementById('httpsWarn').style.display='block';
-  log('⚠️ Nicht HTTPS – viele Browser blocken Kamera/Orientation!');
-}
-
-/* ===== Schritt 1: Kamera-Test ===== */
-let camStream = null;
-const videoEl = document.getElementById('video');
-
-document.getElementById('startCam').addEventListener('click', async ()=>{
-  try{
-    log('Kamera-Test: getUserMedia anfordern…');
-    camStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 1280 },
-        height:{ ideal: 720 }
-      },
-      audio:false
-    });
-    videoEl.srcObject = camStream;
-    log('✅ Kamera läuft (reines Video sichtbar).');
-  }catch(e){
-    log('❌ Kamera-Fehler (Step1): '+ e.name + ' – ' + e.message);
-    alert('Kamera-Fehler: '+e.message);
-  }
-});
-
-document.getElementById('stopCam').addEventListener('click', ()=>{
-  if(camStream){ camStream.getTracks().forEach(t=>t.stop()); camStream=null; log('⏹ Kamera gestoppt.'); }
-  videoEl.srcObject = null;
-});
-
-/* ===== Schritt 2: WebGL-Test ===== */
-document.getElementById('glTest').addEventListener('click', ()=>{
-  const canvas=document.getElementById('glcanvas');
-  const gl=canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-  if(!gl){ log('❌ WebGL nicht verfügbar.'); alert('WebGL nicht verfügbar – Browser/Gerät blockiert 3D.'); return; }
-
-  // Kleines Farbdreieck
-  const vsSrc=`attribute vec2 p; void main(){ gl_Position=vec4(p,0.0,1.0); }`;
-  const fsSrc=`precision mediump float; void main(){ gl_FragColor=vec4(0.0,1.0,1.0,1.0); }`;
-  function compile(src,type){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){throw new Error(gl.getShaderInfoLog(s)||'compile error');}return s;}
-  try{
-    const vs=compile(vsSrc,gl.VERTEX_SHADER), fs=compile(fsSrc,gl.FRAGMENT_SHADER);
-    const prog=gl.createProgram(); gl.attachShader(prog,vs); gl.attachShader(prog,fs); gl.linkProgram(prog);
-    if(!gl.getProgramParameter(prog,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog)||'link error');
-    gl.useProgram(prog);
-    const buf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,buf);
-    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([0,0.9, -0.9,-0.9, 0.9,-0.9]),gl.STATIC_DRAW);
-    const loc=gl.getAttribLocation(prog,'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
-    gl.viewport(0,0,gl.drawingBufferWidth,gl.drawingBufferHeight); gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.drawArrays(gl.TRIANGLES,0,3);
-    log('✅ WebGL ok (Dreieck gezeichnet).');
-  }catch(e){ log('❌ WebGL-Fehler: '+e.message); alert('WebGL-Fehler: '+e.message); }
-});
-
-/* ===== Schritt 3: Marker-AR (HIRO) ===== */
-const stage = document.getElementById('stage');
-const backBtn = document.getElementById('back');
-const ui = document.getElementById('ui');
-
-document.getElementById('startAR').addEventListener('click', startAR);
-
-async function startAR(){
-  // 1) iOS: Nutzer-Geste + Kamera vorab starten (wichtig gegen Black Screen)
-  try{
-    log('AR: getUserMedia vorab für iOS…');
-    const pre = await navigator.mediaDevices.getUserMedia({
-      video:{ facingMode:{ ideal:'environment' } }, audio:false
-    });
-    // Direkt wieder frei geben – AR.js öffnet selbst
-    pre.getTracks().forEach(t=>t.stop());
-    log('AR: Vorab-Kamera ok.');
-  }catch(e){
-    log('❌ AR: Vorab-Kamera fehlgeschlagen: '+e.message);
-    alert('Kamera-Freigabe abgelehnt: '+e.message);
-    return;
-  }
-
-  // 2) UI umschalten
-  ui.style.display='none';
-  backBtn.style.display='block';
-  stage.innerHTML = `
-    <a-scene
-      embedded
-      renderer="antialias:true; alpha:true; precision: mediump; logarithmicDepthBuffer: true"
-      vr-mode-ui="enabled:false"
-      arjs="sourceType: webcam; facingMode: environment; detectionMode: mono; debugUIEnabled:false; videoTexture: true;">
-
-      <!-- Marker-Inhalt -->
+    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;" vr-mode-ui="enabled: false">
       <a-marker preset="hiro">
-        <a-entity scale="3 3 3">
-          <a-box position="0 0.5 0" width="1.6" height="1.6" depth="1.6"
-                 material="color:#00ffff; opacity:0.95; shader:flat"
-                 animation="property: rotation; to: 0 360 0; loop: true; dur: 5000; easing: linear"></a-box>
-          <a-ring rotation="-90 0 0" radius-inner="0.9" radius-outer="1.1" position="0 0.02 0"
-                  material="color:#00ffff; shader:flat; opacity:0.95"></a-ring>
-        </a-entity>
+        <a-box position="0 0.5 0" material="color: red;"></a-box>
       </a-marker>
-
-      <!-- Wichtig: für Marker-AR die einfache Kamera-Entity -->
       <a-entity camera></a-entity>
     </a-scene>
-  `;
-  log('AR-Szene injiziert. Wenn jetzt schwarz: prüfe HTTPS, Kamera-Freigabe, anderen Browser testen.');
 
-  // 3) Sicherheitsnetz: nach 4s prüfen, ob Video läuft
-  setTimeout(()=>{
-    const vid = document.querySelector('video');
-    if(!vid){ log('Warnung: Kein <video> gefunden.'); return; }
-    const playing = !!(vid.readyState >= 2 && !vid.paused && !vid.ended);
-    log('AR Video Status: readyState='+vid.readyState+' paused='+vid.paused+' ended='+vid.ended);
-    if(!playing){
-      log('❌ Video spielt nicht. Workaround: Seite über HTTPS öffnen, andere App schließt Kamera, Low Power Mode aus.');
-      alert('Die Kamera streamt nicht. Bitte:\n• Sicherstellen, dass die Seite über HTTPS läuft\n• Im Browser Kamera erlauben\n• Andere Apps schließen (WhatsApp/Instagram Kamera)\n• Energiesparmodus ausschalten\n• Browser neu starten\n• Alternativ Chrome/Firefox ausprobieren');
-    }
-  }, 4000);
-}
-
-// Zurück zur Diagnose
-backBtn.addEventListener('click', ()=>{
-  stage.innerHTML=''; ui.style.display='block'; backBtn.style.display='none';
-  log('Zurück zur Diagnose-UI.');
-});
-
-/* ===== Bonus: Sensor-Freigabe-Button in iOS Einstellungen hinweisen ===== */
-document.addEventListener('visibilitychange', ()=>{
-  if(document.visibilityState==='visible'){
-    log('Tab wieder sichtbar.');
-  }
-});
-</script>
-</body>
+    <script>
+      document.getElementById("startBtn").addEventListener("click", ()=>{
+        document.getElementById("overlay").style.display="none";
+      });
+    </script>
+  </body>
 </html>
