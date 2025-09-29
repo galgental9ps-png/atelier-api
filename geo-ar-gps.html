@@ -79,10 +79,8 @@
 /*** Konfiguration ***/
 const IMG_SRC = 'https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg';
 const TARGETS = [
-  { name: 'Altstadt-Spot',            lat: 48.366184, lon: 10.867701 },
-  { name: 'Neuer Spot',               lat: 48.36630,  lon: 10.86781  },
-  { name: 'Stettenstraße 7 (86150)',  lat: 48.368905, lon: 10.898445 },
-  { name: 'Gabelsbergerstr. 64 (86199)', lat: 48.33598, lon: 10.86728 }
+  { name: 'Altstadt-Spot',   lat: 48.366184, lon: 10.867701 },
+  { name: 'Stettenstraße 7', lat: 48.368905, lon: 10.898445 } // 86150 Augsburg
 ];
 const BIG_SCALE  = '34 25.5 1';   // riesig
 const TEST_SCALE = '12 9 1';      // groß in 1 m
@@ -277,7 +275,7 @@ function updateHudWithNearest(coords){
   const bearingDeg = (la1,lo1,la2,lo2)=>{
     const φ1=toRad(la1), φ2=toRad(la2), λ1=toRad(lo1), λ2=toRad(lo2);
     const y = Math.sin(λ2-λ1)*Math.cos(φ2);
-    const x = Math.cos(φ1)*sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1);
+    const x = Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1);
     let θ = toDeg(Math.atan2(y,x));
     return (θ+360)%360;
   };
