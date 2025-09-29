@@ -3,11 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Geo-AR mit HUD & Firebase</title>
+<title>Geo-AR mit HUD & Firebase (sichtbar fix)</title>
 
 <!-- A-Frame + AR.js -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
+<!-- ✅ Billboarding-Component (wichtig, damit das Bild dich immer anschaut) -->
+<script src="https://unpkg.com/aframe-look-at-component@1.0.0/dist/aframe-look-at-component.min.js"></script>
 
 <!-- Firebase (ESM) -->
 <script type="module">
@@ -30,16 +32,11 @@
 </script>
 
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;
-    font-family:system-ui, -apple-system, Segoe UI, Inter, Roboto, sans-serif}
-  #overlay{position:fixed;inset:0;display:grid;place-items:center;
-    background:#000c;z-index:10;text-align:center;padding:16px}
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,Segoe UI,Inter,Roboto,sans-serif}
+  #overlay{position:fixed;inset:0;display:grid;place-items:center;background:#000c;z-index:10;text-align:center;padding:16px}
   .btn{padding:12px 14px;border:0;border-radius:12px;font-weight:800;color:#fff;background:#0ea5e9;margin:0 6px;cursor:pointer}
-  #status{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);
-    background:#000d;padding:10px 14px;border-radius:10px;z-index:5;white-space:nowrap;font-weight:700}
-  /* HUD */
-  #hud{position:fixed;top:84px;left:50%;transform:translateX(-50%);
-    z-index:6;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
+  #status{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);background:#000d;padding:10px 14px;border-radius:10px;z-index:5;white-space:nowrap;font-weight:700}
+  #hud{position:fixed;top:84px;left:50%;transform:translateX(-50%);z-index:6;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
   #arrow{width:96px;height:96px;filter:drop-shadow(0 0 8px #00ffff);transition:transform 80ms linear}
   #dist{font-size:18px;font-weight:900;background:#000c;padding:8px 12px;border-radius:999px}
   #corner{position:fixed;top:12px;right:12px;z-index:7;display:flex;gap:8px;align-items:center}
@@ -53,7 +50,7 @@
     <h1 style="margin:0 0 8px">Geo-AR starten</h1>
     <p style="opacity:.9;max-width:640px;margin:0 auto 14px">
       Erlaube <b>Kamera</b>, <b>Standort</b> und ggf. <b>Bewegungssensor</b> (iOS).<br>
-      <b>Los geht’s</b> zeigt Spots + HUD mit Richtung & Entfernung.<br>
+      <b>Los geht’s</b> zeigt Spots + HUD (Richtung & Entfernung).<br>
       <b>Spot setzen</b> speichert deinen Standort als neuen Spot (PW: <code>1234</code>).
     </p>
     <button id="start" class="btn">Los geht’s</button>
@@ -147,8 +144,7 @@ async function startAdmin(){
     });
 
     // sofort lokal anzeigen
-    const docData = { name:'Echo der Gedanken', img:IMG_SRC, lat:latitude, lon:longitude };
-    appendSpotEntity(docData);
+    appendSpotEntity({ name:'Echo der Gedanken', img:IMG_SRC, lat:latitude, lon:longitude });
 
     statusEl.textContent = `Gespeichert: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} (±${Math.round(accuracy)} m)`;
   }catch(e){
@@ -170,19 +166,35 @@ function ensureScene(){
   startHeadingListeners();
 }
 
-/*** Geo-Entity ***/
+/*** Geo-Entity  ✅ jetzt mit look-at + side:double ***/
 function appendSpotEntity(d){
   const el=document.createElement('a-entity');
   el.setAttribute('gps-entity-place',`latitude: ${d.lat}; longitude: ${d.lon};`);
-  el.innerHTML = `
-    <a-plane width="36" height="27" position="0 0 -0.02"
-             material="shader: flat; color: #00ffff; opacity: 0.12; transparent:true"></a-plane>
-    <a-image src="${d.img||IMG_SRC}" scale="${BIG_SCALE}" look-at="[gps-camera]"
-             material="shader: flat; opacity:1"></a-image>
-    <a-ring radius-inner="17" radius-outer="17.8" position="0 0 0.02"
-            material="color:#00ffff; shader:flat; opacity:0.95; transparent:true"
-            animation__pulse="property=scale; to=1.06 1.06 1; dir=alternate; dur=700; loop=true"></a-ring>
-  `;
+
+  const plane = document.createElement('a-plane');
+  plane.setAttribute('width','36');
+  plane.setAttribute('height','27');
+  plane.setAttribute('position','0 0 -0.02');
+  plane.setAttribute('material','shader: flat; color: #00ffff; opacity: 0.12; transparent:true; side: double');
+  plane.setAttribute('look-at','[gps-camera]');
+
+  const img = document.createElement('a-image');
+  img.setAttribute('src', d.img||IMG_SRC);
+  img.setAttribute('scale', BIG_SCALE);
+  img.setAttribute('material','shader: flat; opacity:1; side: double');
+  img.setAttribute('look-at','[gps-camera]');
+
+  const ring = document.createElement('a-ring');
+  ring.setAttribute('radius-inner','17');
+  ring.setAttribute('radius-outer','17.8');
+  ring.setAttribute('position','0 0 0.02');
+  ring.setAttribute('material','color:#00ffff; shader:flat; opacity:0.95; transparent:true; side: double');
+  ring.setAttribute('animation__pulse','property=scale; to=1.06 1.06 1; dir=alternate; dur=700; loop=true; easing=easeInOutSine');
+
+  el.appendChild(plane);
+  el.appendChild(img);
+  el.appendChild(ring);
+
   sceneEl.appendChild(el);
 }
 
@@ -219,7 +231,6 @@ function ensureGeoWatch(){
   return new Promise((resolve,reject)=>{
     if(!('geolocation' in navigator)) return reject(new Error('Geolocation nicht unterstützt'));
     navigator.geolocation.getCurrentPosition(p=>{
-      // Start Watch nach erstem Fix
       if(geoWatchId!=null) navigator.geolocation.clearWatch(geoWatchId);
       geoWatchId = navigator.geolocation.watchPosition(
         pos=>{ updateHud(pos.coords); },
@@ -247,7 +258,6 @@ function updateHud(coords){
   distEl.textContent = `Entfernung: ${txt} · GPS ±${Math.round(accuracy)} m`;
 
   if (deviceHeadingDeg!=null){
-    // Drehwinkel = Zielkurs - Gerätekurs
     const turn=((nearest.brg - deviceHeadingDeg)+360)%360;
     arrowEl.style.transform=`rotate(${turn}deg)`;
   }
