@@ -3,112 +3,105 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Geo-AR mit Firebase</title>
+<title>AR.js Diagnose – Sensorfix + Würfel</title>
 
 <!-- A-Frame & AR.js -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
 
-<!-- Firebase SDK -->
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-  import { getFirestore, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-
-  // 🔑 Deine Firebase-Konfiguration
-  const firebaseConfig = {
-    apiKey: "AIzaSyAd4_0zLdbI6jkjcZZUtMSWCYKP14dGHzQ",
-    authDomain: "geo-ar-2c66d.firebaseapp.com",
-    projectId: "geo-ar-2c66d",
-    storageBucket: "geo-ar-2c66d.appspot.com",
-    messagingSenderId: "232770478087",
-    appId: "1:232770478087:web:d0d6cb8a585bdef5fdcaa2"
-  };
-
-  // Init
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-
-  // Refs
-  const overlay = document.getElementById("overlay");
-  const statusEl = document.getElementById("status");
-  const mount = document.getElementById("mount");
-
-  // Buttons
-  document.getElementById("start").addEventListener("click", async ()=>{
-    overlay.style.display = "none";
-    buildScene();
-    await loadSpots();
-  });
-
-  document.getElementById("setSpot").addEventListener("click", async ()=>{
-    const pw = prompt("Passwort eingeben:");
-    if(pw !== "1234"){ alert("Falsches Passwort"); return; }
-
-    if(!("geolocation" in navigator)){
-      alert("Geolocation nicht unterstützt"); return;
-    }
-
-    navigator.geolocation.getCurrentPosition(async pos=>{
-      try{
-        await addDoc(collection(db,"spots"),{
-          lat: pos.coords.latitude,
-          lon: pos.coords.longitude,
-          ts: Date.now()
-        });
-        alert("Spot gespeichert! Seite neu laden um ihn zu sehen.");
-      }catch(e){
-        alert("Fehler beim Speichern: "+e.message);
-      }
-    }, err=>alert("Standortfehler: "+err.message),
-    { enableHighAccuracy:true });
-  });
-
-  // Szene bauen
-  function buildScene(){
-    mount.innerHTML = `
-      <a-scene embedded
-        vr-mode-ui="enabled:false"
-        renderer="antialias:true; alpha:true"
-        arjs="sourceType: webcam; videoTexture:true; trackingMethod: best; facingMode: environment;">
-        <a-camera gps-camera rotation-reader></a-camera>
-      </a-scene>`;
-  }
-
-  // Spots laden und einfügen
-  async function loadSpots(){
-    const scene = document.querySelector("a-scene");
-    const q = await getDocs(collection(db,"spots"));
-    q.forEach(doc=>{
-      const d = doc.data();
-      const box = document.createElement("a-box");
-      box.setAttribute("gps-entity-place", `latitude: ${d.lat}; longitude: ${d.lon};`);
-      box.setAttribute("material","color:#00ffff; opacity:0.9; shader:flat;");
-      box.setAttribute("scale","6 6 6");
-      box.setAttribute("animation","property=rotation; to:0 360 0; loop:true; dur:6000; easing=linear");
-      scene.appendChild(box);
-    });
-    statusEl.textContent = q.size+" Spots geladen.";
-  }
-</script>
-
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui}
-  #overlay{position:fixed;inset:0;display:grid;place-items:center;background:#000c;z-index:10;text-align:center}
-  .btn{padding:12px 16px;margin:6px;border:0;border-radius:12px;font-weight:700;color:#fff;background:#0ea5e9}
-  #status{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);background:#000a;padding:6px 12px;border-radius:8px;z-index:5}
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,Inter,Roboto}
+  #ui{position:fixed;inset:auto 0 0 0;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;background:#000c;padding:10px;z-index:20}
+  .btn{padding:10px 14px;border:0;border-radius:12px;font-weight:800;color:#fff;background:#0ea5e9}
+  .warn{background:#f59e0b} .ok{background:#10b981}
+  #diag{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:20;background:#000a;padding:8px 12px;border-radius:10px;font-size:13px;white-space:pre-line;text-align:center}
 </style>
 </head>
 <body>
-  <div id="overlay">
-    <div>
-      <h1>Geo-AR starten</h1>
-      <p>„Los geht’s“ → gespeicherte Spots werden angezeigt.<br>„Spot setzen“ → neuen Spot an deinem Standort speichern (PW: 1234).</p>
-      <button id="start" class="btn">Los geht’s</button>
-      <button id="setSpot" class="btn" style="background:#10b981">Spot setzen</button>
-    </div>
-  </div>
 
-  <div id="status">Bereit…</div>
-  <div id="mount"></div>
+<div id="diag">Bereit…\n1) Tippe „Kamera starten“\n2) Dann „Sensor erlauben (iOS/Android)“\n3) Danach „AR starten“ – ein riesiger Würfel sollte direkt vor dir erscheinen.</div>
+
+<div id="ui">
+  <button id="cam" class="btn">Kamera starten</button>
+  <button id="sens" class="btn warn">Sensor erlauben (iOS/Android)</button>
+  <button id="go" class="btn ok">AR starten</button>
+</div>
+
+<div id="mount"></div>
+
+<script>
+let camOK=false, sensOK=false, headingDeg=null;
+
+const diag = document.getElementById('diag');
+const mount = document.getElementById('mount');
+
+function log(msg){
+  diag.textContent = (diag.textContent.split('\n')[0] || 'Status:') + "\n" + msg +
+    `\nHeading: ${headingDeg!=null ? headingDeg.toFixed(0)+'°' : '–'}`;
+}
+
+// 1) Kamera
+document.getElementById('cam').addEventListener('click', async ()=>{
+  try{
+    await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
+    camOK = true; log('Kamera: OK');
+  }catch(e){
+    log('Kamera FEHLER: '+e.message);
+  }
+});
+
+// 2) Sensorpermission iOS/Android
+document.getElementById('sens').addEventListener('click', async ()=>{
+  try{
+    const reqs = [];
+    if (typeof DeviceMotionEvent?.requestPermission === 'function'){
+      reqs.push(DeviceMotionEvent.requestPermission().catch(()=>{}));
+    }
+    if (typeof DeviceOrientationEvent?.requestPermission === 'function'){
+      reqs.push(DeviceOrientationEvent.requestPermission().catch(()=>{}));
+    }
+    await Promise.all(reqs);
+  }catch(e){}
+  // Heading-Listener
+  window.addEventListener('deviceorientation', e=>{
+    if (typeof e?.webkitCompassHeading === 'number'){
+      headingDeg = e.webkitCompassHeading; // iOS
+    } else if (e?.absolute === true && typeof e?.alpha === 'number'){
+      headingDeg = 360 - e.alpha; // Android (ungefähr)
+    }
+    sensOK = headingDeg!=null && !Number.isNaN(headingDeg);
+    log('Sensor: ' + (sensOK ? 'OK' : 'wartet…') + (headingDeg!=null?` (≈${headingDeg.toFixed(0)}°)`:'' ));
+  }, true);
+  log('Sensor angefragt – falls iOS: Safari-Einstellungen → „Bewegung & Orientierung“ aktivieren!');
+});
+
+// 3) AR starten (nur wenn Kamera + Sensor vorhanden)
+document.getElementById('go').addEventListener('click', ()=>{
+  if(!camOK){ log('Erst „Kamera starten“ tippen.'); return; }
+  // Hinweis: Manche Androids liefern heading erst nach Bewegung – Handy leicht kippen.
+  mount.innerHTML = `
+    <a-scene
+      embedded
+      renderer="antialias:true; alpha:true"
+      vr-mode-ui="enabled:false"
+      arjs="sourceType: webcam; videoTexture:true; trackingMethod: best; debugUIEnabled: true;">
+
+      <!-- WICHTIG: große Near/Far, damit nichts rausgeclippt wird -->
+      <a-camera near="0.01" far="100000"></a-camera>
+
+      <!-- RIESEN-WÜRFEL 1 m vor dir -->
+      <a-box position="0 0 -1"
+             width="4" height="4" depth="4"
+             material="color:#00ffff; opacity:0.95; shader:flat"
+             animation="property=rotation; to:0 360 0; loop:true; dur:6000; easing=linear"></a-box>
+
+      <!-- zweiter, halbdurchsichtiger Würfel 2.5 m vor dir -->
+      <a-box position="0 0 -2.5"
+             width="8" height="8" depth="8"
+             material="color:#ff00ff; opacity:0.35; shader:flat"></a-box>
+    </a-scene>`;
+  log('AR Szene gestartet. Siehst du die Würfel? Falls nicht: Sensorrechte / Safari-Einstellung prüfen.');
+});
+</script>
 </body>
 </html>
