@@ -1,150 +1,83 @@
 <!doctype html>
 <html lang="de">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>Camera BG + A-Frame Overlay (sicher sichtbar)</title>
-
-<!-- Nur A-Frame (kein AR.js) -->
-<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>3D ohne AR – Bild als Textur</title>
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,Segoe UI,Inter,Roboto,sans-serif}
-  #camwrap{position:fixed;inset:0;z-index:0;background:#000}
-  #camfeed{position:absolute;inset:0;margin:auto;min-width:100%;min-height:100%;object-fit:cover;transform:scaleX(-1)} /* optional Spiegelung */
-  #scenewrap{position:fixed;inset:0;z-index:1;pointer-events:none}
-  #ui{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:2;background:#000c;padding:10px 14px;border-radius:12px;font-weight:700}
-  .btn{padding:8px 12px;border:0;border-radius:10px;background:#0ea5e9;color:#fff;font-weight:800;cursor:pointer}
+  html,body{height:100%;margin:0;background:#0b0b0b;font-family:system-ui}
+  #c{display:block;width:100%;height:100%}
+  #ui{position:fixed;left:50%;top:12px;transform:translateX(-50%);background:#000a;color:#fff;padding:8px 12px;border-radius:12px;font-weight:700}
 </style>
 </head>
 <body>
+<canvas id="c"></canvas>
+<div id="ui">Zieh mit der Maus / Pinch zum Zoomen</div>
 
-<!-- Kamera-Hintergrund -->
-<div id="camwrap">
-  <video id="camfeed" autoplay playsinline muted></video>
-</div>
-
-<!-- UI -->
-<div id="ui">
-  <button id="start" class="btn">Start</button>
-  <span id="status" style="margin-left:10px;opacity:.9">Bereit…</span>
-</div>
-
-<!-- A-Frame Overlay (transparent) -->
-<div id="scenewrap">
-  <a-scene id="scene"
-    embedded
-    renderer="alpha:true; antialias:true; physicallyCorrectLights:false"
-    vr-mode-ui="enabled:false">
-    <a-assets timeout="15000" crossorigin="anonymous">
-      <!-- Dein Bild + Fallback werden vorgeladen -->
-      <img id="imgPrimary"  src="https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg?v=1" crossorigin="anonymous">
-      <img id="imgFallback" src="https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg" crossorigin="anonymous">
-    </a-assets>
-
-    <a-entity id="rig">
-      <a-camera id="cam" position="0 1.6 0" wasd-controls-enabled="false" look-controls="touchEnabled:true"></a-camera>
-    </a-entity>
-
-    <!-- Hier kommt das Bild-Panel rein -->
-    <a-entity id="panelHolder"></a-entity>
-  </a-scene>
-</div>
-
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
 <script>
-const statusEl = document.getElementById('status');
-const startBtn = document.getElementById('start');
-const videoEl  = document.getElementById('camfeed');
-const scene    = document.getElementById('scene');
-const panelHolder = document.getElementById('panelHolder');
+const IMG_URL = "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg"; // dein Bild
 
-// Einstellungen
-const DIST_M = 1.2;                // Abstand vor der Kamera
-const SIZE_M = { w: 1.6, h: 1.2 }; // Größe des Bildes
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
 
-startBtn.addEventListener('click', async ()=>{
-  try{
-    // 1) Kamera-Stream starten (Hintergrund-Video)
-    const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' }, audio:false });
-    videoEl.srcObject = stream;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x111111);
 
-    // 2) iOS Bewegung fragen (schadet nicht, ist aber optional)
-    try{
-      if (typeof DeviceMotionEvent?.requestPermission === 'function') await DeviceMotionEvent.requestPermission().catch(()=>{});
-      if (typeof DeviceOrientationEvent?.requestPermission === 'function') await DeviceOrientationEvent.requestPermission().catch(()=>{});
-    }catch{}
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.01, 100);
+camera.position.set(0, 0, 2.5);
 
-    // 3) A-Frame: warten bis geladen, dann Panel bauen
-    await new Promise(res => scene.hasLoaded ? res() : scene.addEventListener('loaded', res, {once:true}));
-    await buildPanel();
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.target.set(0,0,0);
 
-    statusEl.textContent = 'Aktiv – Bild steht vor dir.';
-    startBtn.style.display = 'none';
-  }catch(e){
-    statusEl.textContent = 'Fehler: '+(e?.message||e);
-    console.error(e);
-  }
+// Licht
+const light = new THREE.HemisphereLight(0xffffff, 0x202020, 1.0);
+scene.add(light);
+
+// Bild als 3D-Plane
+const loader = new THREE.TextureLoader();
+loader.setCrossOrigin('anonymous');
+loader.load(IMG_URL + "?v=" + Date.now(), (tex)=>{
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const imgW = tex.source.data.width || 1600;
+  const imgH = tex.source.data.height || 1200;
+  const ar = imgW / imgH;               // Seitenverhältnis
+  const height = 1.2;                    // 1.2 m „virtuell“
+  const width  = height * ar;
+
+  const geo = new THREE.PlaneGeometry(width, height);
+  const mat = new THREE.MeshBasicMaterial({map: tex, transparent:false});
+  const mesh = new THREE.Mesh(geo, mat);
+  scene.add(mesh);
+}, (xhr)=>{}, (err)=>{
+  // Fallback, falls das Bild nicht lädt
+  const geo = new THREE.PlaneGeometry(1.6, 1.2);
+  const mat = new THREE.MeshBasicMaterial({color:0x444444});
+  scene.add(new THREE.Mesh(geo, mat));
 });
 
-async function buildPanel(){
-  // prüfen, ob dein Bild geladen ist – sonst Fallback
-  const primary = document.getElementById('imgPrimary');
-  const fallback= document.getElementById('imgFallback');
-  const ok = await imageOK(primary);
+// Boden-Grid (optional)
+const grid = new THREE.GridHelper(10, 20, 0x222222, 0x111111);
+grid.position.y = -0.75;
+scene.add(grid);
 
-  // Holder direkt VOR die Kamera setzen (−Z ist „nach vorne“)
-  panelHolder.setAttribute('position', `0 1.6 ${-DIST_M}`); // gleiche Höhe wie Kamera
-  panelHolder.setAttribute('visible', 'true');
-
-  // Rahmen (leicht cyan)
-  const frame = document.createElement('a-plane');
-  frame.setAttribute('width',  SIZE_M.w + 0.08);
-  frame.setAttribute('height', SIZE_M.h + 0.08);
-  frame.setAttribute('position','0 0 -0.02');
-  frame.setAttribute('material','shader: flat; color:#00ffff; opacity:.16; transparent:true; side:double');
-
-  // Bild
-  const img = document.createElement('a-image');
-  img.setAttribute('src', ok ? '#imgPrimary' : '#imgFallback');
-  img.setAttribute('width',  SIZE_M.w);
-  img.setAttribute('height', SIZE_M.h);
-
-  // alles leer machen, dann einsetzen
-  while (panelHolder.firstChild) panelHolder.removeChild(panelHolder.firstChild);
-  panelHolder.appendChild(frame);
-  panelHolder.appendChild(img);
-
-  // Panel stets in Blickrichtung halten (billboarding zur Kamera)
-  scene.addEventListener('renderstart', ()=>{
-    scene.renderer.setAnimationLoop(()=>{
-      const camObj = document.getElementById('cam').object3D;
-      const phObj  = panelHolder.object3D;
-      // Position stets DIST_M vor die Kamera schieben
-      const pos = new THREE.Vector3();
-      const dir = new THREE.Vector3();
-      camObj.getWorldPosition(pos);
-      camObj.getWorldDirection(dir); // zeigt nach vorn
-      const target = pos.clone().add(dir.multiplyScalar(DIST_M));
-      phObj.position.copy(target);
-      // horizontal zur Kamera drehen
-      phObj.lookAt(pos.x, target.y, pos.z);
-    });
-  });
-
-  statusEl.textContent = ok ? 'Dein Bild geladen.' : 'Fallback-Bild angezeigt (dein JPG lud nicht).';
+function onResize(){
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
 }
+addEventListener('resize', onResize);
 
-// kleines Hilfs-Preload
-function imageOK(imgEl){
-  return new Promise(resolve=>{
-    if (imgEl.complete && imgEl.naturalWidth>0) return resolve(true);
-    const done = (ok)=>{ imgEl.removeEventListener('load',onL); imgEl.removeEventListener('error',onE); resolve(ok); };
-    const onL=()=>done(true), onE=()=>done(false);
-    imgEl.addEventListener('load',onL);
-    imgEl.addEventListener('error',onE);
-    setTimeout(()=>done(imgEl.complete && imgEl.naturalWidth>0), 8000);
-  });
-}
+(function animate(){
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+})();
 </script>
 </body>
 </html>
