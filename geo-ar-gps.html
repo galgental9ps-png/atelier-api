@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>WebAR – Bild 1,2 m vor der Kamera (ohne Geo)</title>
+<title>AR Diagnose: 2D → AR Platte → AR Bild</title>
 
 <!-- A-Frame + AR.js -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
@@ -11,144 +11,190 @@
 
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,Segoe UI,Inter,Roboto,sans-serif}
-  #overlay{position:fixed;inset:0;display:grid;place-items:center;background:#000c;z-index:10;text-align:center;padding:16px}
-  .btn{padding:12px 16px;border:0;border-radius:12px;font-weight:800;color:#fff;background:#0ea5e9;cursor:pointer}
-  #status{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);background:#000d;padding:8px 12px;border-radius:10px;z-index:5;font-weight:700}
+  #ui{position:fixed;inset:auto 0 0 0;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;padding:10px;background:linear-gradient(180deg,transparent,rgba(0,0,0,.6));z-index:20}
+  .btn{padding:10px 12px;border:0;border-radius:10px;font-weight:800;color:#fff;background:#0ea5e9;cursor:pointer}
+  #status{position:fixed;left:50%;bottom:64px;transform:translateX(-50%);background:#000d;padding:8px 12px;border-radius:10px;z-index:20;font-weight:700;max-width:92vw;text-align:center}
+  #overlayImg{position:fixed;inset:auto 16px 92px 16px;display:none;justify-content:center;z-index:15}
+  #overlayImg img{max-width:90vw;max-height:40vh;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.45)}
 </style>
 </head>
 <body>
 
-<div id="overlay">
-  <div>
-    <h1 style="margin:0 0 10px">AR starten</h1>
-    <p style="opacity:.9;max-width:560px;margin:0 auto 14px">
-      Erlaube <b>Kamera</b> (auf iOS ggf. zusätzlich <b>Bewegung</b>).
-      Das Bild erscheint <b>sofort</b> ca. 1,2 m vor der Kamera.
-    </p>
-    <button id="start" class="btn">Los geht’s</button>
-  </div>
+<div id="status">Bereit…</div>
+
+<div id="ui">
+  <button id="start" class="btn">Kamera starten</button>
+  <button id="test1" class="btn" disabled>Test 1: 2D-Bild (Overlay)</button>
+  <button id="test2" class="btn" disabled>Test 2: AR-Platte (ohne Bild)</button>
+  <button id="test3" class="btn" disabled>Test 3: AR-Bild (mit Fallback)</button>
 </div>
 
-<div id="status">Bereit…</div>
+<!-- 2D-Overlay-Test -->
+<div id="overlayImg"><img id="plainImg" alt="Overlay" /></div>
+
+<!-- AR Mount -->
 <div id="mount"></div>
 
 <script>
-/* ===== Konfig ===== */
-const IMG_PRIMARY  = "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg"; // dein Bild
-const IMG_FALLBACK = "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg"; // immer verfügbar
-const SIZE_M = { w: 1.6, h: 1.2 }; // Größe in Metern
-const DIST_M = 1.2;                // Abstand vor der Kamera
+/*** KONFIG ***/
+const IMG_PRIMARY  = "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg"; // dein JPG
+const IMG_FALLBACK = "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg"; // zuverlässiges Fallback
+const SIZE = { w: 1.6, h: 1.2 }; // Meter
+const DIST = 1.2; // Meter vor der Kamera
 
-/* ===== UI/State ===== */
-const overlay = document.getElementById('overlay');
+/*** UI ***/
+const S = (m)=>{ statusEl.textContent = m; console.log(m); };
+const startBtn = document.getElementById('start');
+const test1Btn = document.getElementById('test1');
+const test2Btn = document.getElementById('test2');
+const test3Btn = document.getElementById('test3');
 const statusEl = document.getElementById('status');
+const overlayDiv = document.getElementById('overlayImg');
+const overlayImg = document.getElementById('plainImg');
 const mount = document.getElementById('mount');
-let sceneEl, camEl, boardEl;
 
-document.getElementById('start').addEventListener('click', startAR);
+/*** State ***/
+let sceneEl, camEl;
 
-async function startAR(){
+/*** Start Kamera/AR Umgebung ***/
+startBtn.addEventListener('click', async ()=>{
   try{
-    await ensurePermissions();
-    buildScene();
-    await onSceneLoaded();
-    await buildBoard();   // Bild direkt vor die Kamera
-    overlay.style.display='none';
-    status("AR aktiv – Bild sollte sichtbar sein.");
+    await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
+    // iOS Bewegungssensoren (best effort)
+    try{
+      if (typeof DeviceMotionEvent?.requestPermission === 'function') await DeviceMotionEvent.requestPermission().catch(()=>{});
+      if (typeof DeviceOrientationEvent?.requestPermission === 'function') await DeviceOrientationEvent.requestPermission().catch(()=>{});
+    }catch{}
+    ensureScene();
+    await sceneLoaded();
+    startBtn.disabled = true;
+    test1Btn.disabled = false;
+    test2Btn.disabled = false;
+    test3Btn.disabled = false;
+    S("Kamera aktiv. Wähle einen Test.");
   }catch(e){
-    status("Start-Fehler: " + (e?.message || e));
+    S("Kamera konnte nicht gestartet werden: "+(e?.message||e));
   }
-}
+});
 
-/* ===== Permissions ===== */
-async function ensurePermissions(){
-  // Kamera
-  await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
-  // iOS Bewegung (best effort)
-  try{
-    if (typeof DeviceMotionEvent?.requestPermission === 'function') await DeviceMotionEvent.requestPermission().catch(()=>{});
-    if (typeof DeviceOrientationEvent?.requestPermission === 'function') await DeviceOrientationEvent.requestPermission().catch(()=>{});
-  }catch{}
-}
+/*** Test 1: 2D Overlay – zeigt, ob das Bild/URL/CORS ok ist ***/
+test1Btn.addEventListener('click', async ()=>{
+  overlayDiv.style.display = 'flex';
+  S("Lade 2D-Bild…");
+  const ok = await loadImageTry(IMG_PRIMARY);
+  overlayImg.src = ok ? IMG_PRIMARY : IMG_FALLBACK;
+  S(ok ? "2D-Bild geladen (dein JPG)." : "Dein JPG fehlgeschlagen – 2D-Fallback angezeigt.");
+});
 
-/* ===== Scene ===== */
-function buildScene(){
+/*** Test 2: AR-Platte – keine Textur, nur Rendering prüfen ***/
+test2Btn.addEventListener('click', ()=>{
+  overlayDiv.style.display = 'none';
+  clearARContent();
+  const holder = document.createElement('a-entity');
+  holder.setAttribute('position', `0 0 ${-DIST}`);
+  const plane = document.createElement('a-plane');
+  plane.setAttribute('width', SIZE.w);
+  plane.setAttribute('height', SIZE.h);
+  plane.setAttribute('material', 'shader: flat; color:#00ffff; opacity:.35; side:double; transparent:true');
+  holder.appendChild(plane);
+  camEl.appendChild(holder);
+  S("AR-Platte 1,2 m vor der Kamera angezeigt.");
+});
+
+/*** Test 3: AR-Bild mit Fallback ***/
+test3Btn.addEventListener('click', async ()=>{
+  overlayDiv.style.display = 'none';
+  clearARContent();
+  S("Lade Textur…");
+  const ok = await preloadAssets([IMG_PRIMARY, IMG_FALLBACK]);
+  const srcId = ok ? '#imgPrimary' : '#imgFallback';
+  S(ok ? "Dein JPG geladen. Zeige in AR." : "Dein JPG fehlgeschlagen – Fallback in AR.");
+  const holder = document.createElement('a-entity');
+  holder.setAttribute('position', `0 0 ${-DIST}`);
+  // Rahmen
+  const frame = document.createElement('a-plane');
+  frame.setAttribute('width', SIZE.w + 0.08);
+  frame.setAttribute('height', SIZE.h + 0.08);
+  frame.setAttribute('position','0 0 -0.02');
+  frame.setAttribute('material','shader: flat; color:#00ffff; opacity:.16; transparent:true; side:double');
+  // Bild
+  const img = document.createElement('a-image');
+  img.setAttribute('src', srcId);
+  img.setAttribute('width', SIZE.w);
+  img.setAttribute('height', SIZE.h);
+  holder.appendChild(frame);
+  holder.appendChild(img);
+  camEl.appendChild(holder);
+});
+
+/*** AR Szene ***/
+function ensureScene(){
   if (sceneEl) return;
   mount.innerHTML = `
     <a-scene embedded vr-mode-ui="enabled:false"
       renderer="antialias:true; alpha:true"
       arjs="sourceType: webcam; videoTexture:true; facingMode: environment; trackingMethod: best; debugUIEnabled:false">
-
-      <!-- Beide Bilder vorladen (mit Cachebuster) -->
-      <a-assets timeout="15000" crossorigin="anonymous">
-        <img id="imgPrimary"  src="${IMG_PRIMARY}?v=${Date.now()}"  crossorigin="anonymous">
-        <img id="imgFallback" src="${IMG_FALLBACK}?v=${Date.now()}" crossorigin="anonymous">
-      </a-assets>
-
+      <a-assets timeout="20000" crossorigin="anonymous"></a-assets>
       <a-entity id="rig">
+        <!-- einfache Kamera reicht; Objekt wird relativ zur Kamera platziert -->
         <a-camera id="cam" rotation-reader></a-camera>
       </a-entity>
     </a-scene>`;
   sceneEl = document.querySelector('a-scene');
-  camEl   = document.getElementById('cam');
+  camEl = document.getElementById('cam');
 }
-function onSceneLoaded(){
+function sceneLoaded(){
   return new Promise(res=>{
     if (sceneEl.hasLoaded) return res();
     sceneEl.addEventListener('loaded', res, { once:true });
   });
 }
 
-/* ===== Billboard (Bild vor Kamera) ===== */
-async function buildBoard(){
-  if (boardEl) return;
-
-  const ok = await imageOk(document.getElementById('imgPrimary'));
-  const srcId = ok ? '#imgPrimary' : '#imgFallback';
-  status(ok ? "Dein Bild geladen." : "Dein Bild fehlgeschlagen – Fallback angezeigt.");
-
-  boardEl = document.createElement('a-entity');
-  boardEl.setAttribute('position', `0 0 ${-DIST_M}`); // vor der Kamera
-  boardEl.setAttribute('visible', 'true');
-
-  // Rahmen (leicht, damit man’s sieht)
-  const frame = document.createElement('a-plane');
-  frame.setAttribute('width',  SIZE_M.w + 0.08);
-  frame.setAttribute('height', SIZE_M.h + 0.08);
-  frame.setAttribute('position','0 0 -0.02');
-  frame.setAttribute('material','shader: flat; color:#00ffff; opacity:.16; transparent:true; side:double');
-
-  // Bild
-  const img = document.createElement('a-image');
-  img.setAttribute('src', srcId);
-  img.setAttribute('width',  SIZE_M.w);
-  img.setAttribute('height', SIZE_M.h);
-
-  // Wenn Primary später doch lädt, automatisch auf Primary umschalten
-  if (!ok){
-    const prim = document.getElementById('imgPrimary');
-    prim.addEventListener('load', ()=>{ img.setAttribute('src', '#imgPrimary'); status("Dein Bild nachgeladen – Fallback ersetzt."); }, { once:true });
-  }
-
-  boardEl.appendChild(frame);
-  boardEl.appendChild(img);
-  camEl.appendChild(boardEl);
-}
-
-function imageOk(imgEl){
-  return new Promise(resolve=>{
-    if (imgEl.complete && imgEl.naturalWidth>0) return resolve(true);
-    const onLoad  = ()=>{ cleanup(); resolve(true); };
-    const onError = ()=>{ cleanup(); resolve(false); };
-    function cleanup(){ imgEl.removeEventListener('load', onLoad); imgEl.removeEventListener('error', onError); }
-    imgEl.addEventListener('load', onLoad);
-    imgEl.addEventListener('error', onError);
-    setTimeout(()=>{ cleanup(); resolve(imgEl.complete && imgEl.naturalWidth>0); }, 6000);
+function clearARContent(){
+  const rig = camEl;
+  [...rig.children].forEach(ch=>{
+    if (ch.tagName && ch.tagName.toLowerCase() === 'a-entity') rig.removeChild(ch);
   });
 }
 
-/* ===== Status ===== */
-function status(msg){ statusEl.textContent = msg; console.log(msg); }
+/*** Assets preload für Test 3 ***/
+async function preloadAssets(urls){
+  const assets = sceneEl.querySelector('a-assets');
+  assets.innerHTML = ''; // reset
+  let primaryOk = false;
+  for (const u of urls){
+    const id = u===IMG_PRIMARY ? 'imgPrimary' : 'imgFallback';
+    const el = document.createElement('img');
+    el.id = id;
+    el.crossOrigin = 'anonymous';
+    el.src = u + '?v=' + Date.now();
+    assets.appendChild(el);
+    if (u===IMG_PRIMARY) primaryOk = await imageOK(el);
+    else await imageOK(el);
+  }
+  return primaryOk;
+}
+
+function imageOK(imgEl){
+  return new Promise(resolve=>{
+    if (imgEl.complete && imgEl.naturalWidth>0) return resolve(true);
+    const done=(ok)=>{ imgEl.removeEventListener('load',onL); imgEl.removeEventListener('error',onE); resolve(ok); };
+    const onL=()=>done(true), onE=()=>done(false);
+    imgEl.addEventListener('load',onL); imgEl.addEventListener('error',onE);
+    setTimeout(()=>done(imgEl.complete && imgEl.naturalWidth>0), 8000);
+  });
+}
+
+// 2D Bildlader
+function loadImageTry(url){
+  return new Promise(resolve=>{
+    const im = new Image();
+    im.crossOrigin = 'anonymous';
+    im.onload = ()=>resolve(true);
+    im.onerror = ()=>resolve(false);
+    im.src = url + '?v=' + Date.now();
+  });
+}
 </script>
 </body>
 </html>
