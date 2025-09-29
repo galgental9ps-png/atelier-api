@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Geo-AR – Diagnose + Ultra sichtbar</title>
+<title>Geo-AR – Echo der Gedanken (mit Firebase-Kontrolle)</title>
 
 <!-- A-Frame + AR.js -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
 
-<!-- Firebase (Compat CDN) -->
+<!-- Firebase (Compat CDN für einfache HTML-Seite) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
 
@@ -21,6 +21,7 @@
   .btn{padding:12px 14px;border:0;border-radius:12px;font-weight:800;color:#fff;background:#0ea5e9;margin:0 6px;cursor:pointer}
   #status{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);
     background:#000d;padding:10px 14px;border-radius:10px;z-index:5;white-space:nowrap;font-weight:700}
+
   /* HUD */
   #hud{position:fixed;top:88px;left:50%;transform:translateX(-50%);
     z-index:6;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
@@ -28,6 +29,7 @@
   #dist{font-size:18px;font-weight:900;background:#000c;padding:8px 12px;border-radius:999px}
   #corner{position:fixed;top:12px;right:12px;z-index:7;display:flex;gap:8px;align-items:center}
   .chip{background:#000d;border:1px solid #1f2937;color:#fff;padding:8px 10px;border-radius:10px;font-size:12px}
+
   /* Diagnose Bar */
   #diag{position:fixed;top:0;left:0;right:0;z-index:8;display:flex;flex-wrap:wrap;gap:6px;padding:8px;
     background:#0b1220cc;border-bottom:1px solid #1f2937}
@@ -42,6 +44,7 @@
 <!-- Diagnose-Leiste -->
 <div id="diag">
   <span id="httpsPill" class="pill">HTTPS: prüfen…</span>
+  <span id="fbPill" class="pill">Firebase: prüfen…</span>
   <span id="camPill" class="pill">Kamera: prüfen…</span>
   <span id="sensPill" class="pill">Sensor: prüfen…</span>
   <span id="geoPill" class="pill">Standort: prüfen…</span>
@@ -52,16 +55,16 @@
 <div id="overlay">
   <div>
     <h1 style="margin:0 0 8px">Geo-AR starten</h1>
-    <p style="opacity:.9;max-width:600px;margin:0 auto 14px">
+    <p style="opacity:.9;max-width:640px;margin:0 auto 14px">
       Erlaube <b>Kamera</b>. Bei iOS: <b>Bewegungssensor</b> zustimmen. Für Geo-Spots zusätzlich <b>Standort</b> erlauben.<br>
-      <b>Tipp:</b> „Hier testen“ zeigt sofort einen <u>sehr auffälligen Beacon</u> 1&nbsp;m vor dir (ohne Standort).
+      <b>Tipp:</b> „Hier testen“ zeigt sofort einen Beacon 1&nbsp;m vor dir (ohne Standort).
     </p>
     <button id="start" class="btn">Los geht’s (Geo-Spots)</button>
     <button id="spawnHere" class="btn" style="background:#10b981">Hier testen (1 m vor dir)</button>
     <button id="askGeo" class="btn" style="background:#f59e0b">Standort erlauben / neu holen</button>
     <button id="adminSet" class="btn" style="background:#ef4444">Spot setzen (Admin)</button>
     <div style="font-size:13px;opacity:.8;margin-top:10px">
-      Hinweis: Standort funktioniert nur über <b>HTTPS</b> oder <b>localhost</b>. Kompass kurz kalibrieren (∞-Bewegung).
+      Standort nur über <b>HTTPS</b> oder <b>localhost</b>. Kompass kalibrieren (∞-Bewegung).
     </div>
   </div>
 </div>
@@ -91,7 +94,7 @@
 </div>
 
 <script>
-/*** Firebase INIT ***/
+/*** Firebase INIT (DEINE CONFIG) ***/
 const firebaseConfig = {
   apiKey: "AIzaSyAd4_0zLdbI6jkjcZZUtMSWCYKP14dGHzQ",
   authDomain: "geo-ar-2c66d.firebaseapp.com",
@@ -106,17 +109,18 @@ try { firebase.initializeApp(firebaseConfig); db = firebase.firestore(); } catch
 /*** Konfiguration ***/
 const IMG_SRC = 'https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg';
 
+/* Feste Spots (plus deine zwei neuen) */
 const BASE_TARGETS = [
   { name: 'Altstadt-Spot',             lat: 48.366184, lon: 10.867701 },
   { name: 'Stettenstraße 7',           lat: 48.368905, lon: 10.898445 },
-  { name: 'Neuer Spot',                lat: 48.36630,  lon: 10.86781  },
-  { name: 'Gabelsbergerstraße 64',     lat: 48.33598,  lon: 10.86728  }
+  { name: 'Neuer Spot',                lat: 48.36630,  lon: 10.86781  },  // 48.36630,10.86781
+  { name: 'Gabelsbergerstraße 64',     lat: 48.33598,  lon: 10.86728  }   // 86199
 ];
 
-let REMOTE_TARGETS = [];
+let REMOTE_TARGETS = [];  // aus Firestore
 
-const BIG_SCALE  = '34 25.5 1';
-const TEST_SCALE = '12 9 1';
+const BIG_SCALE  = '34 25.5 1';  // draußen sehr groß
+const TEST_SCALE = '12 9 1';     // 1m-Beacon
 
 /*** UI-Refs ***/
 const statusEl  = document.getElementById('status');
@@ -127,6 +131,7 @@ const distEl    = document.getElementById('dist');
 const nearestNameEl = document.getElementById('nearestName');
 
 const httpsPill = document.getElementById('httpsPill');
+const fbPill    = document.getElementById('fbPill');
 const camPill   = document.getElementById('camPill');
 const sensPill  = document.getElementById('sensPill');
 const geoPill   = document.getElementById('geoPill');
@@ -150,23 +155,52 @@ document.getElementById('spawnHere').addEventListener('click', spawnHere);
 document.getElementById('askGeo').addEventListener('click', ensureGeoWatch);
 document.getElementById('adminSet').addEventListener('click', adminSetSpot);
 
-/*** Diagnose: HTTPS ***/
+/*** Diagnose: HTTPS + Firebase ***/
 (function checkHttps(){
   const ok = (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
   httpsPill.textContent = ok ? 'HTTPS: OK' : 'HTTPS: NICHT HTTPS – Standort blockiert';
   httpsPill.classList.add(ok ? 'ok' : 'bad');
 })();
+checkFirebaseHealth();
 
-/*** Start ***/
+/* Firebase-Kontrolle: prüft Lesen & Schreiben (legt/aktualisiert health/__ping__) */
+async function checkFirebaseHealth(){
+  if(!db){ fbPill.textContent='Firebase: nicht initialisiert'; fbPill.classList.add('bad'); return; }
+  try{
+    // kleiner Ping-Write (für Testbetrieb; später entfernen oder per Rules absichern)
+    await db.collection('health').doc('__ping__').set({ t: new Date().toISOString() }, { merge: true });
+    const snap = await db.collection('health').doc('__ping__').get();
+    if (snap.exists){
+      fbPill.textContent = 'Firebase: OK';
+      fbPill.classList.remove('warn','bad'); fbPill.classList.add('ok');
+    }else{
+      fbPill.textContent = 'Firebase: Read/Write fraglich';
+      fbPill.classList.add('warn');
+    }
+  }catch(e){
+    fbPill.textContent = 'Firebase: FEHLER (Rules?)';
+    fbPill.classList.add('bad');
+    console.warn('Firebase health error:', e);
+  }
+}
+
+/*** START – Szene immer bauen, GPS „best effort“ ***/
 async function initGeo(){
   try{
-    statusEl.textContent = 'Starte… Kamera/Sensor/Standort';
+    statusEl.textContent = 'Starte… Kamera & Sensoren';
     await ensureCameraAndMotion();
-    await ensureGeoWatch();
-    await loadRemoteSpots();
-    ensureScene();          // Szene einmalig bauen
+
+    ensureScene();           // Kamera sofort sichtbar – auch ohne GPS
     overlay.style.display = 'none';
     started = true;
+
+    statusEl.textContent = 'Hole Standort (falls möglich)…';
+    await ensureGeoWatch().catch(()=>{});
+
+    statusEl.textContent = 'Lade Spots…';
+    await loadRemoteSpots();
+    REMOTE_TARGETS.forEach(t => appendSpotEntity(t, remoteLayerEl));
+
     statusEl.textContent = 'Bereit. Geo-Spots aktiv.';
   }catch(err){
     console.error(err);
@@ -174,37 +208,28 @@ async function initGeo(){
   }
 }
 
-/*** Szene nur EINMAL bauen (kein Rebuild!) ***/
+/*** Szene EINMAL bauen (kein Rebuild – verhindert Kamera-Freeze) ***/
 function ensureScene(){
-  if (sceneEl) return; // schon da
-  // base + remote Layer vorbereiten
-  let imagesHtml = `
-    <!-- Debug-Würfel -->
-    <a-box color="#00ffff" depth="1.2" height="1.2" width="1.2" position="0 0 -3"
-           material="shader: flat; opacity: 0.9"></a-box>
-    <a-entity id="baseLayer"></a-entity>
-    <a-entity id="remoteLayer"></a-entity>
-    <a-camera gps-camera rotation-reader></a-camera>
-  `;
+  if (sceneEl) return;
   mount.innerHTML = `
     <a-scene embedded vr-mode-ui="enabled:false"
              renderer="antialias:true; alpha:true"
              arjs="sourceType: webcam; videoTexture:true; trackingMethod: best; facingMode: environment;">
-      ${imagesHtml}
+      <a-box color="#00ffff" depth="1.2" height="1.2" width="1.2" position="0 0 -3"
+             material="shader: flat; opacity: 0.9"></a-box>
+      <a-entity id="baseLayer"></a-entity>
+      <a-entity id="remoteLayer"></a-entity>
+      <a-camera gps-camera rotation-reader></a-camera>
     </a-scene>`;
   sceneEl = document.querySelector('a-scene');
-  baseLayerEl = sceneEl.querySelector('#baseLayer');
+  baseLayerEl   = sceneEl.querySelector('#baseLayer');
   remoteLayerEl = sceneEl.querySelector('#remoteLayer');
 
-  // feste Spots rein
   BASE_TARGETS.forEach(t => appendSpotEntity(t, baseLayerEl));
-  // remote Spots rein
-  REMOTE_TARGETS.forEach(t => appendSpotEntity(t, remoteLayerEl));
-
   startHeadingListeners();
 }
 
-/*** Spot-Entity dynamisch hinzufügen ***/
+/*** Geo-Entity dynamisch hinzufügen ***/
 function appendSpotEntity(t, parentEl){
   const imgSrc = t.img || IMG_SRC;
   const wrap = document.createElement('a-entity');
@@ -236,33 +261,27 @@ function appendSpotEntity(t, parentEl){
   (parentEl || sceneEl).appendChild(wrap);
 }
 
-/*** Admin-Setzen – ohne Szene neu zu bauen ***/
+/*** Admin-Setzen: Live-Kamera + Speichern → sofort sichtbar für alle ***/
 async function adminSetSpot(){
   try{
     const pw = prompt('Admin-Passwort eingeben:');
     if (pw !== '1234'){ statusEl.textContent = 'Falsches Passwort.'; return; }
 
     await ensureCameraAndMotion();
-    if (!started){
-      await loadRemoteSpots();
-      ensureScene();           // nur wenn noch nicht gebaut
-      overlay.style.display = 'none';
-      started = true;
-    }
+    if (!started){ ensureScene(); overlay.style.display = 'none'; started = true; }
 
-    // Setz-Marker zeigen
-    createPlacingMarker();
+    createPlacingMarker();         // 1 m vor dir sichtbar
     placeUI.style.display = 'flex';
-    statusEl.textContent = 'Setz-Modus: Richte die Kamera aus. „Hier speichern“, um deinen Spot zu setzen.';
+    statusEl.textContent = 'Setz-Modus: Richte die Kamera aus. „Hier speichern“, um den Spot zu setzen.';
 
     const onConfirm = async ()=>{
       try{
         const pos = await getOnceLocation();
         const { latitude, longitude, accuracy } = pos.coords;
 
-        if(!db){ statusEl.textContent = 'Firebase nicht konfiguriert – Speichern nicht möglich.'; return; }
-
+        if(!db){ statusEl.textContent = 'Firebase nicht aktiv – kann nicht speichern.'; return; }
         const name = prompt('Name für den Spot:','Echo der Gedanken') || 'Echo der Gedanken';
+
         const docData = {
           name,
           lat: Number(latitude.toFixed(6)),
@@ -272,8 +291,8 @@ async function adminSetSpot(){
         };
         await db.collection('spots').add(docData);
 
-        // In-Memory + direktes Append (kein rebuild!)
-        REMOTE_TARGETS.push({ name: docData.name, lat: docData.lat, lon: docData.lon, img: docData.img });
+        // Lokale Liste + sofort ins AR einfügen (ohne Scene-Rebuild!)
+        REMOTE_TARGETS.push(docData);
         appendSpotEntity(docData, remoteLayerEl);
 
         statusEl.textContent = `Gespeichert bei ${docData.lat}, ${docData.lon} (±${Math.round(accuracy)} m).`;
@@ -284,11 +303,7 @@ async function adminSetSpot(){
         cleanupPlacingUI();
       }
     };
-
-    const onCancel = ()=>{
-      statusEl.textContent = 'Setz-Modus abgebrochen.';
-      cleanupPlacingUI();
-    };
+    const onCancel = ()=>{ statusEl.textContent='Setz-Modus abgebrochen.'; cleanupPlacingUI(); };
 
     function cleanupPlacingUI(){
       removePlacingMarker();
@@ -296,7 +311,6 @@ async function adminSetSpot(){
       confirmPlaceBtn.removeEventListener('click', onConfirm);
       cancelPlaceBtn.removeEventListener('click', onCancel);
     }
-
     confirmPlaceBtn.addEventListener('click', onConfirm);
     cancelPlaceBtn.addEventListener('click', onCancel);
 
@@ -306,14 +320,18 @@ async function adminSetSpot(){
   }
 }
 
-/*** Remote-Spots laden ***/
+/*** Firestore-Spots laden ***/
 async function loadRemoteSpots(){
   if(!db){ REMOTE_TARGETS = []; return; }
-  const snap = await db.collection('spots').get();
-  REMOTE_TARGETS = snap.docs.map(d=>{
-    const x = d.data();
-    return { name: x.name || 'Spot', lat: x.lat, lon: x.lon, img: x.img || IMG_SRC };
-  });
+  try{
+    const snap = await db.collection('spots').get();
+    REMOTE_TARGETS = snap.docs.map(d=>{
+      const x = d.data();
+      return { name: x.name || 'Spot', lat: x.lat, lon: x.lon, img: x.img || IMG_SRC };
+    });
+  }catch(e){
+    console.warn('Konnte Spots nicht laden:', e);
+  }
 }
 
 /*** Kamera + Sensoren ***/
@@ -344,29 +362,34 @@ function getOnceLocation(){
   });
 }
 
-/*** Standort-Watch ***/
+/*** Standort-Watch (nicht blockierend) ***/
 async function ensureGeoWatch(){
-  if(!('geolocation' in navigator)){
-    geoPill.textContent = 'Standort: nicht unterstützt'; geoPill.classList.add('bad');
-    throw new Error('Geolocation nicht unterstützt');
-  }
-  await new Promise((res,rej)=>{
+  return new Promise((resolve)=>{
+    if(!('geolocation' in navigator)){
+      geoPill.textContent = 'Standort: nicht unterstützt'; geoPill.classList.add('bad');
+      statusEl.textContent = 'Dieses Gerät/Browser unterstützt keine Standortabfrage.';
+      return resolve();
+    }
     navigator.geolocation.getCurrentPosition(
-      pos => { updatePosPill(pos.coords); res(); },
-      err => { handleGeoError(err); rej(err); },
+      pos => {
+        updatePosPill(pos.coords);
+        if(geoWatchId!=null){ navigator.geolocation.clearWatch(geoWatchId); }
+        geoWatchId = navigator.geolocation.watchPosition(
+          p => {
+            geoPill.textContent = 'Standort: OK';
+            geoPill.classList.remove('warn','bad'); geoPill.classList.add('ok');
+            updatePosPill(p.coords);
+            updateHudWithNearest(p.coords);
+          },
+          err => { handleGeoError(err); },
+          { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
+        );
+        resolve();
+      },
+      err => { handleGeoError(err); resolve(); },
       { enableHighAccuracy:true, timeout:12000, maximumAge:0 }
     );
   });
-  if(geoWatchId!=null){ navigator.geolocation.clearWatch(geoWatchId); }
-  geoWatchId = navigator.geolocation.watchPosition(
-    pos => {
-      geoPill.textContent = 'Standort: OK'; geoPill.classList.remove('warn','bad'); geoPill.classList.add('ok');
-      updatePosPill(pos.coords);
-      updateHudWithNearest(pos.coords);
-    },
-    err => { handleGeoError(err); },
-    { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
-  );
 }
 
 /*** Setz-Marker (1 m vor dir) ***/
@@ -401,12 +424,9 @@ function createPlacingMarker(){
   if (!sceneEl) ensureScene();
   sceneEl.appendChild(placingMarkerEl);
 }
+function removePlacingMarker(){ if (placingMarkerEl){ placingMarkerEl.remove(); placingMarkerEl = null; } }
 
-function removePlacingMarker(){
-  if (placingMarkerEl){ placingMarkerEl.remove(); placingMarkerEl = null; }
-}
-
-/*** HUD-Logik ***/
+/*** HUD-Logik (Entfernung + Pfeil) ***/
 function updateHudWithNearest(coords){
   const R=6371e3, toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
   const distM = (la1,lo1,la2,lo2)=>{
@@ -475,7 +495,6 @@ function updatePosPill(c){
   const lon = c.longitude.toFixed(5);
   posPill.textContent = `Pos: ${lat}, ${lon} (±${Math.round(c.accuracy)} m)`;
 }
-
 function handleGeoError(err){
   let txt = 'Standort: Fehler';
   geoPill.classList.remove('ok','warn','bad');
@@ -486,18 +505,13 @@ function handleGeoError(err){
     default: txt = 'Standort: Fehler ('+err.message+')'; geoPill.classList.add('warn');
   }
   geoPill.textContent = txt;
-  statusEl.textContent = txt + ' – nutze den Button „Standort erlauben / neu holen“.';
+  statusEl.textContent = txt + ' – nutze „Standort erlauben / neu holen“.';
 }
 
 /*** Test-Beacon (ohne GPS) ***/
 async function spawnHere(){
   try{
-    if(!started){
-      await ensureCameraAndMotion();
-      ensureScene();
-      overlay.style.display = 'none';
-      started = true;
-    }
+    if(!started){ await ensureCameraAndMotion(); ensureScene(); overlay.style.display='none'; started=true; }
     if(localImgEl){ localImgEl.remove(); }
 
     localImgEl = document.createElement('a-entity');
