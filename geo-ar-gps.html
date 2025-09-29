@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Geo-AR – Echo der Gedanken (Ultra sichtbar + Distanz & Pfeil)</title>
+<title>Geo-AR – Diagnose + Ultra sichtbar</title>
 
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
@@ -14,36 +14,57 @@
   #overlay{position:fixed;inset:0;display:grid;place-items:center;
     background:linear-gradient(#000c,#000c);z-index:10;text-align:center;padding:16px}
   .btn{padding:12px 14px;border:0;border-radius:12px;font-weight:800;color:#fff;background:#0ea5e9;margin:0 6px}
-  #status{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);
+  #status{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);
     background:#000d;padding:10px 14px;border-radius:10px;z-index:5;white-space:nowrap;font-weight:700}
-  /* HUD: großer Pfeil + Entfernung */
-  #hud{position:fixed;top:12px;left:50%;transform:translateX(-50%);
+  /* HUD */
+  #hud{position:fixed;top:88px;left:50%;transform:translateX(-50%);
     z-index:6;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
   #arrow{width:96px;height:96px;filter:drop-shadow(0 0 8px #00ffff);transition:transform 80ms linear}
   #dist{font-size:18px;font-weight:900;background:#000c;padding:8px 12px;border-radius:999px}
-  /* Testhinweis oben rechts */
-  #corner{position:fixed;top:12px;right:12px;z-index:7;display:flex;gap:8px}
+  #corner{position:fixed;top:12px;right:12px;z-index:7;display:flex;gap:8px;align-items:center}
   .chip{background:#000d;border:1px solid #1f2937;color:#fff;padding:8px 10px;border-radius:10px;font-size:12px}
+  /* Diagnose Bar */
+  #diag{position:fixed;top:0;left:0;right:0;z-index:8;display:flex;flex-wrap:wrap;gap:6px;padding:8px;
+    background:#0b1220cc;border-bottom:1px solid #1f2937}
+  .pill{font-size:12px;border-radius:999px;padding:6px 10px;border:1px solid #374151}
+  .ok{color:#10b981;border-color:#10b981;}
+  .warn{color:#f59e0b;border-color:#f59e0b;}
+  .bad{color:#ef4444;border-color:#ef4444;}
 </style>
 </head>
 <body>
+
+<!-- Diagnose-Leiste -->
+<div id="diag">
+  <span id="httpsPill" class="pill">HTTPS: prüfen…</span>
+  <span id="camPill" class="pill">Kamera: prüfen…</span>
+  <span id="sensPill" class="pill">Sensor: prüfen…</span>
+  <span id="geoPill" class="pill">Standort: prüfen…</span>
+  <span id="headPill" class="pill">Heading: –</span>
+  <span id="posPill" class="pill">Pos: –</span>
+</div>
 
 <div id="overlay">
   <div>
     <h1 style="margin:0 0 8px">Geo-AR starten</h1>
     <p style="opacity:.9;max-width:600px;margin:0 auto 14px">
       Erlaube <b>Kamera</b>. Bei iOS: <b>Bewegungssensor</b> zustimmen. Für Geo-Spots zusätzlich <b>Standort</b> erlauben.<br>
-      <b>Tipp:</b> „Hier testen“ zeigt sofort einen <u>sehr auffälligen Beacon</u> 1&nbsp;m vor dir.
+      <b>Tipp:</b> „Hier testen“ zeigt sofort einen <u>sehr auffälligen Beacon</u> 1&nbsp;m vor dir (ohne Standort).
     </p>
     <button id="start" class="btn">Los geht’s (Geo-Spots)</button>
     <button id="spawnHere" class="btn" style="background:#10b981">Hier testen (1 m vor dir)</button>
-    <div style="font-size:13px;opacity:.8;margin-top:10px">Draußen testen & Kompass kalibrieren (∞-Bewegung).</div>
+    <button id="askGeo" class="btn" style="background:#f59e0b">Standort erlauben / neu holen</button>
+    <div style="font-size:13px;opacity:.8;margin-top:10px">
+      Hinweis: Standort funktioniert nur über <b>HTTPS</b> oder <b>localhost</b>. Kompass kurz kalibrieren (∞-Bewegung).
+    </div>
   </div>
 </div>
 
-<div id="corner"><div class="chip">🎯 Nächster Spot: <span id="nearestName">–</span></div></div>
+<div id="corner">
+  <div class="chip">🎯 Nächster Spot: <span id="nearestName">–</span></div>
+</div>
+
 <div id="hud">
-  <!-- SVG-Pfeil (wird per CSS rotiert) -->
   <svg id="arrow" viewBox="0 0 100 100">
     <polygon points="50,5 80,55 60,55 60,95 40,95 40,55 20,55"
       fill="#00ffff" opacity="0.95"/>
@@ -61,10 +82,10 @@ const TARGETS = [
   { name: 'Altstadt-Spot',   lat: 48.366184, lon: 10.867701 },
   { name: 'Stettenstraße 7', lat: 48.368905, lon: 10.898445 } // 86150 Augsburg
 ];
-const BIG_SCALE = '34 25.5 1';  // riesig & auffällig
-const TEST_SCALE = '12 9 1';    // sehr groß in 1 m
+const BIG_SCALE  = '34 25.5 1';   // riesig
+const TEST_SCALE = '12 9 1';      // groß in 1 m
 
-/*** Elemente ***/
+/*** UI-Refs ***/
 const statusEl  = document.getElementById('status');
 const mount     = document.getElementById('mount');
 const overlay   = document.getElementById('overlay');
@@ -72,55 +93,69 @@ const arrowEl   = document.getElementById('arrow');
 const distEl    = document.getElementById('dist');
 const nearestNameEl = document.getElementById('nearestName');
 
+const httpsPill = document.getElementById('httpsPill');
+const camPill   = document.getElementById('camPill');
+const sensPill  = document.getElementById('sensPill');
+const geoPill   = document.getElementById('geoPill');
+const headPill  = document.getElementById('headPill');
+const posPill   = document.getElementById('posPill');
+
 let sceneEl, localImgEl, started = false;
-let deviceHeadingDeg = null; // 0..360 (0=N)
-let lastPos = null;
+let deviceHeadingDeg = null;
+let geoWatchId = null;
 
 /*** Buttons ***/
 document.getElementById('start').addEventListener('click', initGeo);
 document.getElementById('spawnHere').addEventListener('click', spawnHere);
+document.getElementById('askGeo').addEventListener('click', ensureGeoWatch);
+
+/*** Diagnose: HTTPS ***/
+(function checkHttps(){
+  const ok = (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+  httpsPill.textContent = ok ? 'HTTPS: OK' : 'HTTPS: NICHT HTTPS – Standort blockiert';
+  httpsPill.classList.add(ok ? 'ok' : 'bad');
+})();
 
 /*** Start mit Geo-Spots ***/
 async function initGeo(){
   try{
     await ensureCameraAndMotion();
-    await getOnceLocation(); // Standort notwendig für Distanzen
-    buildScene();            // baut AR-Szene + Geo-Bilder
+    await ensureGeoWatch();            // startet watchPosition inkl. Abfrage
+    buildScene();                      // AR-Szene mit Geo-Bildern
     overlay.style.display = 'none';
     started = true;
-    watchDistanceAndHeading(); // HUD steuern
   }catch(err){
     statusEl.textContent = 'Fehler: ' + err.message;
   }
 }
 
-/*** Nur Test-Beacon (ohne Standort) – startet Kamera automatisch ***/
+/*** Nur Test-Beacon (ohne Standort) ***/
 async function spawnHere(){
   try{
     if(!started){
-      await ensureCameraAndMotion(); // nur Kamera/Sensor
-      buildScene();                  // Szene ohne Standort reicht
+      await ensureCameraAndMotion();   // Kamera/Sensor
+      buildScene();
       overlay.style.display = 'none';
       started = true;
     }
     if(localImgEl){ localImgEl.remove(); }
 
-    // Beacon: sehr auffällig – mit Glow-Hintergrund + pulsierendem Rahmen
+    // sehr auffälliger Beacon
     localImgEl = document.createElement('a-entity');
 
-    const bg = document.createElement('a-plane'); // leuchtender Hintergrund
+    const bg = document.createElement('a-plane');
     bg.setAttribute('width','14');
     bg.setAttribute('height','10.5');
     bg.setAttribute('material','shader: flat; color: #00ffff; opacity: 0.18; transparent: true');
     bg.setAttribute('position','0 0 0');
 
-    const img = document.createElement('a-image'); // Kunstwerk
+    const img = document.createElement('a-image');
     img.setAttribute('src', IMG_SRC);
     img.setAttribute('scale', TEST_SCALE);
     img.setAttribute('material','shader: flat; opacity: 1; transparent: false');
     img.setAttribute('look-at','[camera]');
 
-    const frame = document.createElement('a-ring'); // pulsierender Rahmen
+    const frame = document.createElement('a-ring');
     frame.setAttribute('radius-inner','6.2');
     frame.setAttribute('radius-outer','6.6');
     frame.setAttribute('position','0 0 0.01');
@@ -134,15 +169,25 @@ async function spawnHere(){
     localImgEl.setAttribute('position','0 0 -1');   // 1 m vor dir
     mount.querySelector('a-scene').appendChild(localImgEl);
 
-    statusEl.textContent = 'Test-Beacon 1 m vor dir platziert.';
+    statusEl.textContent = 'Test-Beacon 1 m vor dir platziert (ohne Standort).';
   }catch(err){
     statusEl.textContent = 'Fehler beim Testmodus: ' + err.message;
   }
 }
 
-/*** Kamera + Sensors ***/
+/*** Kamera + Sensoren ***/
 async function ensureCameraAndMotion(){
-  await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
+  // Kamera
+  try{
+    await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
+    camPill.textContent = 'Kamera: OK';
+    camPill.classList.add('ok');
+  }catch(err){
+    camPill.textContent = 'Kamera: BLOCKIERT';
+    camPill.classList.add('bad');
+    throw err;
+  }
+  // Sensor-Permission (iOS)
   try{
     if (typeof DeviceMotionEvent?.requestPermission === 'function') {
       await DeviceMotionEvent.requestPermission().catch(()=>{});
@@ -150,20 +195,45 @@ async function ensureCameraAndMotion(){
     if (typeof DeviceOrientationEvent?.requestPermission === 'function') {
       await DeviceOrientationEvent.requestPermission().catch(()=>{});
     }
-  }catch(e){}
+    sensPill.textContent = 'Sensor: OK';
+    sensPill.classList.add('ok');
+  }catch(e){
+    sensPill.textContent = 'Sensor: evtl. blockiert';
+    sensPill.classList.add('warn');
+  }
   startHeadingListeners();
 }
 
-/*** Standort einmalig holen ***/
-function getOnceLocation(){
-  return new Promise((res,rej)=>{
-    if(!('geolocation' in navigator)) return rej(new Error('Geolocation nicht unterstützt'));
-    navigator.geolocation.getCurrentPosition(res, e=>rej(new Error('Standort: '+e.message)),
-      { enableHighAccuracy:true, timeout:15000, maximumAge:0 });
+/*** Standort-Watch starten (mit klarer Fehleranzeige) ***/
+async function ensureGeoWatch(){
+  if(!('geolocation' in navigator)){
+    geoPill.textContent = 'Standort: nicht unterstützt';
+    geoPill.classList.add('bad');
+    throw new Error('Geolocation nicht unterstützt');
+  }
+  // Einmalige Abfrage triggert die Permission UI
+  await new Promise((res,rej)=>{
+    navigator.geolocation.getCurrentPosition(
+      pos => { updatePosPill(pos.coords); res(); },
+      err => { handleGeoError(err); rej(err); },
+      { enableHighAccuracy:true, timeout:12000, maximumAge:0 }
+    );
   });
+  // Laufender Watch
+  if(geoWatchId!=null){ navigator.geolocation.clearWatch(geoWatchId); }
+  geoWatchId = navigator.geolocation.watchPosition(
+    pos => { 
+      geoPill.textContent = 'Standort: OK';
+      geoPill.classList.remove('warn','bad'); geoPill.classList.add('ok');
+      updatePosPill(pos.coords);
+      updateHudWithNearest(pos.coords);
+    },
+    err => { handleGeoError(err); },
+    { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
+  );
 }
 
-/*** AR-Szene aufbauen – Geo-Bilder riesig + mit Glow-Backdrop ***/
+/*** AR-Szene ***/
 function buildScene(){
   let imagesHtml = `
     <!-- Debug-Würfel 3 m vor dir -->
@@ -194,11 +264,9 @@ function buildScene(){
   sceneEl = document.querySelector('a-scene');
 }
 
-/*** Live-Distanz + HUD-Pfeil ***/
-function watchDistanceAndHeading(){
-  if(!('geolocation' in navigator)) return;
+/*** HUD-Logik ***/
+function updateHudWithNearest(coords){
   const R=6371e3, toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
-
   const distM = (la1,lo1,la2,lo2)=>{
     const dLa=toRad(la2-la1), dLo=toRad(lo2-lo1);
     const a=Math.sin(dLa/2)**2+Math.cos(toRad(la1))*Math.cos(toRad(la2))*Math.sin(dLo/2)**2;
@@ -209,58 +277,71 @@ function watchDistanceAndHeading(){
     const y = Math.sin(λ2-λ1)*Math.cos(φ2);
     const x = Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1);
     let θ = toDeg(Math.atan2(y,x));
-    return (θ+360)%360; // 0..360
+    return (θ+360)%360;
   };
 
-  navigator.geolocation.watchPosition(
-    p => {
-      lastPos = p.coords;
-      const { latitude, longitude, accuracy } = p.coords;
+  const { latitude, longitude, accuracy } = coords;
+  const entries = TARGETS.map(t => ({
+    name: t.name,
+    d: distM(latitude, longitude, t.lat, t.lon),
+    brg: bearingDeg(latitude, longitude, t.lat, t.lon)
+  })).sort((a,b)=>a.d-b.d);
 
-      // Distanzen & nächster Spot
-      const entries = TARGETS.map(t => ({
-        name: t.name,
-        d: distM(latitude, longitude, t.lat, t.lon),
-        brg: bearingDeg(latitude, longitude, t.lat, t.lon)
-      })).sort((a,b)=>a.d-b.d);
+  const nearest = entries[0];
+  nearestNameEl.textContent = nearest.name;
 
-      const nearest = entries[0];
-      nearestNameEl.textContent = nearest.name;
+  const dTxt = nearest.d >= 1000 ? (nearest.d/1000).toFixed(2)+' km' : nearest.d.toFixed(0)+' m';
+  distEl.textContent = `Entfernung: ${dTxt} · GPS ±${Math.round(accuracy)} m`;
 
-      // Distanz gut lesbar
-      const dTxt = nearest.d >= 1000 ? (nearest.d/1000).toFixed(2)+' km' : nearest.d.toFixed(0)+' m';
-      distEl.textContent = `Entfernung: ${dTxt} · GPS ±${Math.round(accuracy)} m`;
+  if (deviceHeadingDeg!=null){
+    const turn = ((nearest.brg - deviceHeadingDeg) + 360) % 360;
+    arrowEl.style.transform = `rotate(${turn}deg)`;
+    headPill.textContent = 'Heading: ' + deviceHeadingDeg.toFixed(0) + '°';
+    headPill.classList.add('ok');
+  }else{
+    headPill.textContent = 'Heading: – (Sensor noch aus)';
+    headPill.classList.remove('ok'); headPill.classList.add('warn');
+  }
 
-      // Pfeil ausrichten (Geräte-Heading -> Ziel-Bearing)
-      if (deviceHeadingDeg!=null){
-        const turn = ((nearest.brg - deviceHeadingDeg) + 360) % 360; // wieviel Grad drehen
-        arrowEl.style.transform = `rotate(${turn}deg)`;
-      }
-      statusEl.textContent = `Nächster: ${nearest.name} · Kurs: ${nearest.brg.toFixed(0)}° · Dein Heading: ${deviceHeadingDeg!=null?deviceHeadingDeg.toFixed(0)+'°':'–'}`;
-    },
-    e => { statusEl.textContent = 'Standort-Fehler: '+e.message; },
-    { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
-  );
+  statusEl.textContent = `Nächster: ${nearest.name} · Kurs: ${nearest.brg.toFixed(0)}° · Dein Heading: ${deviceHeadingDeg!=null?deviceHeadingDeg.toFixed(0)+'°':'–'}`;
 }
 
-/*** Heading (Kompass) erfassen ***/
+/*** Heading (Kompass) ***/
 function startHeadingListeners(){
-  // iOS (webkitCompassHeading)
   window.addEventListener('deviceorientation', e=>{
     if (typeof e.webkitCompassHeading === 'number'){
-      deviceHeadingDeg = e.webkitCompassHeading; // 0=N
+      deviceHeadingDeg = e.webkitCompassHeading;
     }else if (e.absolute === true && typeof e.alpha === 'number'){
-      // Fallback: alpha 0=N (kann je nach Gerät abweichen)
-      deviceHeadingDeg = 360 - e.alpha; // in Kompassrichtung umdrehen
+      deviceHeadingDeg = 360 - e.alpha;
     }
+    headPill.textContent = deviceHeadingDeg!=null ? ('Heading: '+deviceHeadingDeg.toFixed(0)+'°') : 'Heading: –';
   }, true);
 
-  // Manche Browser feuern deviceorientationabsolute
   window.addEventListener('deviceorientationabsolute', e=>{
     if (typeof e.alpha === 'number'){
       deviceHeadingDeg = 360 - e.alpha;
     }
   }, true);
+}
+
+/*** Diagnose-Helfer ***/
+function updatePosPill(c){
+  const lat = c.latitude.toFixed(5);
+  const lon = c.longitude.toFixed(5);
+  posPill.textContent = `Pos: ${lat}, ${lon} (±${Math.round(c.accuracy)} m)`;
+}
+
+function handleGeoError(err){
+  let txt = 'Standort: Fehler';
+  geoPill.classList.remove('ok','warn','bad');
+  switch(err.code){
+    case 1: txt = 'Standort: verweigert (Erlaubnis geben)'; geoPill.classList.add('bad'); break;
+    case 2: txt = 'Standort: nicht verfügbar'; geoPill.classList.add('warn'); break;
+    case 3: txt = 'Standort: Timeout'; geoPill.classList.add('warn'); break;
+    default: txt = 'Standort: Fehler ('+err.message+')'; geoPill.classList.add('warn');
+  }
+  geoPill.textContent = txt;
+  statusEl.textContent = txt + ' – nutze den Button „Standort erlauben / neu holen“.';
 }
 </script>
 </body>
