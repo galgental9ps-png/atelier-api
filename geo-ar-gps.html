@@ -1,41 +1,200 @@
 <!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <title>AR.js Minimal</title>
-    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
-    <style>
-      body,html { margin:0; height:100%; overflow:hidden; }
-      #overlay {
-        position:fixed; inset:0; background:#000d;
-        display:flex; flex-direction:column;
-        justify-content:center; align-items:center;
-        color:#fff; z-index:5;
-      }
-      button {
-        padding:16px 22px; font-size:18px; border-radius:10px;
-        background:#0ea5e9; color:#fff; border:0; cursor:pointer;
-      }
-    </style>
-  </head>
-  <body>
-    <div id="overlay">
-      <h2>Starte AR</h2>
-      <button id="startBtn">Los geht's</button>
-    </div>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Location Web-AR – große Würfel an GPS-Spots</title>
 
-    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;" vr-mode-ui="enabled: false">
-      <a-marker preset="hiro">
-        <a-box position="0 0.5 0" material="color: red;"></a-box>
-      </a-marker>
-      <a-entity camera></a-entity>
+<!-- A-Frame + AR.js -->
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
+<!-- optional für Text/Billboard -->
+<script src="https://unpkg.com/aframe-look-at-component@1.0.0/dist/aframe-look-at-component.min.js"></script>
+
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,Inter,Roboto}
+  #overlay{position:fixed;inset:0;display:grid;place-items:center;background:#000c;z-index:10;text-align:center;padding:16px}
+  .btn{padding:14px 18px;border:0;border-radius:12px;background:#0ea5e9;color:#fff;font-weight:800;cursor:pointer}
+  #tips{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:6;background:#000a;border:1px solid #333;padding:6px 10px;border-radius:10px;font-size:12px}
+  #hud{position:fixed;top:76px;left:50%;transform:translateX(-50%);z-index:6;display:none;flex-direction:column;gap:8px;align-items:center}
+  #arrow{width:88px;height:88px;filter:drop-shadow(0 0 8px #00ffff);transition:transform 80ms linear}
+  #dist{font-size:13px;background:#000a;border:1px solid #333;padding:6px 10px;border-radius:999px}
+  #status{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:6;background:#000a;border:1px solid #333;padding:8px 12px;border-radius:10px;font-size:12px;white-space:nowrap}
+</style>
+</head>
+<body>
+
+<div id="tips">HTTPS nötig • Kamera erlauben • iOS: Einstellungen → Safari → „Bewegung & Orientierung“ aktivieren</div>
+
+<div id="overlay">
+  <div>
+    <h2 style="margin:0 0 8px">Location-AR starten</h2>
+    <p style="opacity:.85;max-width:560px">Zeigt <b>riesige, drehende Würfel</b> an deinen GPS-Spots + Kompass-HUD (Richtung/Entfernung).</p>
+    <button id="startBtn" class="btn">Los geht’s</button>
+    <p id="err" style="opacity:.8;margin-top:10px"></p>
+  </div>
+</div>
+
+<div id="hud">
+  <svg id="arrow" viewBox="0 0 100 100" aria-label="Richtung">
+    <polygon points="50,5 80,55 60,55 60,95 40,95 40,55 20,55" fill="#00ffff" opacity="0.95"/>
+  </svg>
+  <div id="dist">–</div>
+</div>
+
+<div id="status">Bereit…</div>
+<div id="stage"></div>
+
+<script>
+/* ===== Spots (deine 4 Positionen) ===== */
+const TARGETS = [
+  { name: 'Altstadt-Spot',         lat: 48.366184, lon: 10.867701 },
+  { name: 'Stettenstraße 7',       lat: 48.368905, lon: 10.898445 },
+  { name: 'Neuer Spot',            lat: 48.36630,  lon: 10.86781  },
+  { name: 'Gabelsbergerstraße 64', lat: 48.33598,  lon: 10.86728  }
+];
+
+/* ===== UI refs ===== */
+const overlay = document.getElementById('overlay');
+const errEl   = document.getElementById('err');
+const stage   = document.getElementById('stage');
+const hud     = document.getElementById('hud');
+const arrowEl = document.getElementById('arrow');
+const distEl  = document.getElementById('dist');
+const statusEl= document.getElementById('status');
+
+/* ===== helpers ===== */
+const toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
+function distM(la1,lo1,la2,lo2){
+  const R=6371e3, dLa=toRad(la2-la1), dLo=toRad(lo2-lo1);
+  const a=Math.sin(dLa/2)**2+Math.cos(toRad(la1))*Math.cos(toRad(la2))*Math.sin(dLo/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+function bearing(la1,lo1,la2,lo2){
+  const φ1=toRad(la1), φ2=toRad(la2), λ1=toRad(lo1), λ2=toRad(lo2);
+  const y=Math.sin(λ2-λ1)*Math.cos(φ2);
+  const x=Math.cos(φ1)*sin(φ2)-sin(φ1)*cos(φ2)*Math.cos(λ2-λ1);
+  return (toDeg(Math.atan2(y,x))+360)%360;
+}
+function sin(x){return Math.sin(x);}
+
+let deviceHeadingDeg = null, geoWatchId = null;
+
+/* ===== start button ===== */
+document.getElementById('startBtn').addEventListener('click', start);
+
+async function start(){
+  // 1) kamera vorab anfragen (fix gegen schwarzen screen)
+  try{
+    await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ideal:'environment'} }, audio:false });
+  }catch(e){
+    errEl.textContent = 'Kamera-Fehler: '+e.message;
+    return;
+  }
+
+  // 2) sensor permission (iOS)
+  try{
+    if (typeof DeviceMotionEvent?.requestPermission==='function'){ await DeviceMotionEvent.requestPermission().catch(()=>{}); }
+    if (typeof DeviceOrientationEvent?.requestPermission==='function'){ await DeviceOrientationEvent.requestPermission().catch(()=>{}); }
+  }catch(e){}
+
+  // 3) scene einfügen
+  stage.innerHTML = `
+    <a-scene
+      embedded
+      vr-mode-ui="enabled:false"
+      renderer="antialias:true; alpha:true"
+      arjs="sourceType: webcam; videoTexture:true; trackingMethod: best; facingMode: environment;">
+      <a-camera gps-camera="gpsMinDistance:0; gpsTimeInterval:1000" near="0.01" far="100000" rotation-reader></a-camera>
     </a-scene>
+  `;
+  const scene = document.querySelector('a-scene');
 
-    <script>
-      document.getElementById("startBtn").addEventListener("click", ()=>{
-        document.getElementById("overlay").style.display="none";
-      });
-    </script>
-  </body>
+  // 4) große beacons für jeden spot
+  TARGETS.forEach(t=>{
+    const holder = document.createElement('a-entity');
+    holder.setAttribute('gps-entity-place', `latitude: ${t.lat}; longitude: ${t.lon};`);
+
+    // leuchtsäule
+    const beam = document.createElement('a-cylinder');
+    beam.setAttribute('radius','1');
+    beam.setAttribute('height','24');
+    beam.setAttribute('position','0 12 0');
+    beam.setAttribute('material','color:#00ffff; opacity:0.28; transparent:true; side:double');
+
+    // fetter würfel
+    const cube = document.createElement('a-box');
+    cube.setAttribute('width','12'); cube.setAttribute('height','12'); cube.setAttribute('depth','12');
+    cube.setAttribute('position','0 6 0');
+    cube.setAttribute('material','color:#00ffff; shader:flat; opacity:0.95; side:double');
+    cube.setAttribute('animation','property: rotation; to: 0 360 0; loop: true; dur: 9000; easing: linear');
+
+    // label
+    const label = document.createElement('a-text');
+    label.setAttribute('value', t.name);
+    label.setAttribute('color', '#00ffff');
+    label.setAttribute('position', '0 19 0.02');
+    label.setAttribute('width', '14');
+    label.setAttribute('align', 'center');
+    label.setAttribute('look-at', '[gps-camera]');
+
+    // bodenring
+    const ring = document.createElement('a-ring');
+    ring.setAttribute('radius-inner','3.2'); ring.setAttribute('radius-outer','3.8');
+    ring.setAttribute('position','0 0 0.02');
+    ring.setAttribute('material','color:#00ffff; shader:flat; opacity:0.95; side:double');
+
+    holder.appendChild(beam);
+    holder.appendChild(cube);
+    holder.appendChild(label);
+    holder.appendChild(ring);
+    scene.appendChild(holder);
+  });
+
+  // 5) hud + heading + gps
+  overlay.style.display='none';
+  hud.style.display='flex';
+  startHeading();
+  ensureGeoWatch(updateHUD);
+  statusEl.textContent='Location-AR aktiv. Drehe dich/geh ein paar Meter, bis GPS stabil ist.';
+}
+
+/* ===== compass ===== */
+function startHeading(){
+  window.addEventListener('deviceorientation', e=>{
+    if (typeof e.webkitCompassHeading==='number'){ deviceHeadingDeg = e.webkitCompassHeading; }
+    else if (e.absolute===true && typeof e.alpha==='number'){ deviceHeadingDeg = 360 - e.alpha; }
+  }, true);
+}
+
+/* ===== gps ===== */
+function ensureGeoWatch(onUpdate){
+  if(!('geolocation' in navigator)){ statusEl.textContent='Geolocation nicht unterstützt'; return; }
+  navigator.geolocation.getCurrentPosition(p=>{
+    if(geoWatchId!=null) navigator.geolocation.clearWatch(geoWatchId);
+    geoWatchId = navigator.geolocation.watchPosition(
+      pos=>onUpdate(pos.coords),
+      err=>{ statusEl.textContent='GPS-Fehler: '+err.message; },
+      { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
+    );
+    onUpdate(p.coords);
+  }, err=>{ statusEl.textContent='GPS-Startfehler: '+err.message; }, { enableHighAccuracy:true, timeout:15000, maximumAge:0 });
+}
+
+/* ===== hud update ===== */
+function updateHUD(coords){
+  const { latitude, longitude, accuracy } = coords;
+  const list = TARGETS
+    .map(t=>({ t, d: distM(latitude,longitude,t.lat,t.lon), brg: bearing(latitude,longitude,t.lat,t.lon) }))
+    .sort((a,b)=>a.d-b.d);
+  const nearest = list[0];
+  const txt = nearest.d>=1000 ? (nearest.d/1000).toFixed(2)+' km' : Math.round(nearest.d)+' m';
+  distEl.textContent = `🎯 ${nearest.t.name} • Entfernung: ${txt} • GPS ±${Math.round(accuracy)} m`;
+  if (deviceHeadingDeg!=null){
+    const turn = ((nearest.brg - deviceHeadingDeg) + 360) % 360;
+    arrowEl.style.transform = `rotate(${turn}deg)`;
+  }
+}
+</script>
+</body>
 </html>
