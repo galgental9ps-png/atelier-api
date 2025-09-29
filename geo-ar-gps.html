@@ -3,335 +3,50 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Geo-AR Mega-Beacon (HUD & Firebase)</title>
+<title>AR Test – Riesiger Würfel</title>
 
 <!-- A-Frame + AR.js -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
-<script src="https://unpkg.com/aframe-look-at-component@1.0.0/dist/aframe-look-at-component.min.js"></script>
-
-<!-- Firebase (ESM) -->
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-  import { getFirestore, collection, addDoc, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
-  const firebaseConfig = {
-    apiKey: "AIzaSyAd4_0zLdbI6jkjcZZUtMSWCYKP14dGHzQ",
-    authDomain: "geo-ar-2c66d.firebaseapp.com",
-    projectId: "geo-ar-2c66d",
-    storageBucket: "geo-ar-2c66d.appspot.com",
-    messagingSenderId: "232770478087",
-    appId: "1:232770478087:web:d0d6cb8a585bdef5fdcaa2"
-  };
-  const app = initializeApp(firebaseConfig);
-  const db  = getFirestore(app);
-  window._db = db;
-  window._fs = { collection, addDoc, getDocs, serverTimestamp };
-</script>
 
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;
-    font-family:system-ui, -apple-system, Segoe UI, Inter, Roboto, sans-serif}
-  #overlay{position:fixed;inset:0;display:grid;place-items:center;background:#000c;z-index:10;text-align:center;padding:16px}
-  .btn{padding:12px 14px;border:0;border-radius:12px;font-weight:800;color:#fff;background:#0ea5e9;margin:0 6px;cursor:pointer}
-  #status{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);
-    background:#000d;padding:10px 14px;border-radius:10px;z-index:5;white-space:nowrap;font-weight:700}
-
-  /* HUD */
-  #hud{position:fixed;top:84px;left:50%;transform:translateX(-50%);
-    z-index:6;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
-  #arrow{width:96px;height:96px;filter:drop-shadow(0 0 8px #00ffff);transition:transform 80ms linear}
-  #dist{font-size:18px;font-weight:900;background:#000c;padding:8px 12px;border-radius:999px}
-
-  /* Header Chips + Route */
-  #corner{position:fixed;top:12px;right:12px;z-index:7;display:flex;gap:8px;align-items:center}
-  .chip{background:#000d;border:1px solid #1f2937;color:#fff;padding:8px 10px;border-radius:10px;font-size:12px}
-  #route{position:fixed;top:12px;left:12px;z-index:7}
-  #routeBtn{background:#10b981}
-
-  /* Label styling in AR (a-text sieht besser mit etwas Größe aus) */
-  .label{font-weight:800}
+  html,body{margin:0;height:100%;overflow:hidden;background:#000}
+  #overlay{position:fixed;inset:0;display:grid;place-items:center;background:#000c;z-index:10;color:#fff}
+  .btn{padding:12px 16px;border-radius:12px;background:#0ea5e9;color:#fff;font-weight:800;border:0}
 </style>
 </head>
 <body>
 
 <div id="overlay">
   <div>
-    <h1 style="margin:0 0 8px">Geo-AR starten</h1>
-    <p style="opacity:.9;max-width:640px;margin:0 auto 14px">
-      Erlaube <b>Kamera</b>, <b>Standort</b> und ggf. <b>Bewegungssensor</b> (iOS).<br>
-      <b>Los geht’s</b> zeigt Spots als <u>riesige Beacons</u> + HUD (Richtung/Entfernung).<br>
-      <b>Spot setzen</b> speichert deinen Standort als neuen Spot (PW: <code>1234</code>).
-    </p>
-    <button id="start" class="btn">Los geht’s</button>
-    <button id="admin" class="btn" style="background:#ef4444">Spot setzen (Admin)</button>
+    <h1>AR Test</h1>
+    <p>Tippe auf den Button – dann sollte <b>direkt vor dir</b> ein riesiger Würfel erscheinen.</p>
+    <button id="start" class="btn">Start</button>
   </div>
 </div>
 
-<div id="route">
-  <button id="routeBtn" class="btn" disabled>Route (Maps)</button>
-</div>
-
-<div id="corner">
-  <div class="chip">🎯 Nächster Spot: <span id="nearestName">–</span></div>
-</div>
-
-<div id="hud">
-  <svg id="arrow" viewBox="0 0 100 100" aria-label="Richtung zum Spot">
-    <polygon points="50,5 80,55 60,55 60,95 40,95 40,55 20,55" fill="#00ffff" opacity="0.95"/>
-  </svg>
-  <div id="dist">Entfernung: –</div>
-</div>
-
-<div id="status">Bereit…</div>
 <div id="mount"></div>
 
-<script type="module">
-/*** Firebase handles ***/
-const { collection, addDoc, getDocs, serverTimestamp } = window._fs;
-const db = window._db;
-
-/*** UI-Refs ***/
-const mount    = document.getElementById('mount');
-const overlay  = document.getElementById('overlay');
-const statusEl = document.getElementById('status');
-const arrowEl  = document.getElementById('arrow');
-const distEl   = document.getElementById('dist');
-const nearestNameEl = document.getElementById('nearestName');
-const routeBtn = document.getElementById('routeBtn');
-
-/*** Bild (Textur) ***/
-const IMG_SRC = "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg";
-
-/*** Feste Spots (inkl. deiner 2 neuen) ***/
-const BASE_TARGETS = [
-  { name: 'Altstadt-Spot',         lat: 48.366184, lon: 10.867701 },
-  { name: 'Stettenstraße 7',       lat: 48.368905, lon: 10.898445 },
-  { name: 'Neuer Spot',            lat: 48.36630,  lon: 10.86781  },
-  { name: 'Gabelsbergerstraße 64', lat: 48.33598,  lon: 10.86728  }
-];
-let REMOTE_TARGETS = []; // Firestore
-
-/*** State ***/
-let sceneEl, started=false, deviceHeadingDeg=null, geoWatchId=null;
-let currentNearest = null;
-
-/*** Buttons ***/
-document.getElementById('start').addEventListener('click', startViewer);
-document.getElementById('admin').addEventListener('click', startAdmin);
-routeBtn.addEventListener('click', openRoute);
-
-/*** Start: Viewer ***/
-async function startViewer(){
-  try{
-    await ensureCameraAndMotion();
-    ensureScene();
-    overlay.style.display='none';
-    await ensureGeoWatch();                     // erster GPS-Fix
-    BASE_TARGETS.forEach(t => appendSpotEntity(t));
-    await loadRemoteSpots();
-    REMOTE_TARGETS.forEach(t => appendSpotEntity(t));
-    started=true;
-    statusEl.textContent='Viewer aktiv. HUD zeigt Richtung & Entfernung.';
-  }catch(e){
-    statusEl.textContent='Start-Fehler: '+e.message;
-  }
-}
-
-/*** Start: Admin (Spot speichern) ***/
-async function startAdmin(){
-  const pw = prompt('Admin-Passwort:');
-  if(pw!=='1234'){ alert('Falsches Passwort'); return; }
-  try{
-    await ensureCameraAndMotion();
-    ensureScene();
-    overlay.style.display='none';
-    const pos = await getOnceLocation();
-    const { latitude, longitude, accuracy } = pos.coords;
-
-    await addDoc(collection(db,'spots'),{
-      name:'Echo der Gedanken',
-      img: IMG_SRC,
-      lat: Number(latitude.toFixed(6)),
-      lon: Number(longitude.toFixed(6)),
-      createdAt: serverTimestamp()
-    });
-
-    // Sofort lokal anzeigen
-    appendSpotEntity({ name:'Echo der Gedanken', img:IMG_SRC, lat:latitude, lon:longitude });
-    statusEl.textContent = `Gespeichert: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} (±${Math.round(accuracy)} m)`;
-  }catch(e){
-    console.error(e);
-    statusEl.textContent = 'Admin-Fehler: '+e.message;
-  }
-}
-
-/*** Szene (einmal) ***/
-function ensureScene(){
-  if(sceneEl) return;
-  mount.innerHTML = `
-    <a-scene embedded vr-mode-ui="enabled:false"
+<script>
+document.getElementById('start').addEventListener('click', ()=>{
+  document.getElementById('overlay').style.display='none';
+  document.getElementById('mount').innerHTML = `
+    <a-scene embedded
       renderer="antialias:true; alpha:true"
+      vr-mode-ui="enabled:false"
       arjs="sourceType: webcam; videoTexture:true; trackingMethod: best; facingMode: environment;">
-      <a-camera gps-camera="gpsMinDistance:0; gpsTimeInterval:1000" rotation-reader></a-camera>
-    </a-scene>`;
-  sceneEl = document.querySelector('a-scene');
-  startHeadingListeners();
-}
 
-/*** GEO-ENTITY: MEGA-BEACON (Würfel + Säule + Ring + Label) ***/
-function appendSpotEntity(d){
-  const parent = document.createElement('a-entity');
-  parent.setAttribute('gps-entity-place', `latitude: ${d.lat}; longitude: ${d.lon};`);
+      <!-- Riesiger Würfel 20×20×20 m, 10 m vor dir -->
+      <a-box position="0 0 -10"
+             width="20" height="20" depth="20"
+             material="color: #00ffff; opacity:0.8; shader:flat;"
+             animation="property=rotation; to=0 360 0; loop=true; dur=10000; easing=linear">
+      </a-box>
 
-  // RIESIGER WÜRFEL: 6 m Kantenlänge, auf 3 m Höhe
-  const box = document.createElement('a-box');
-  box.setAttribute('width',  '6');
-  box.setAttribute('height', '6');
-  box.setAttribute('depth',  '6');
-  box.setAttribute('position', '0 3 0'); // schwebt
-  box.setAttribute('material', `src: ${d.img||IMG_SRC}; color:#ffffff; roughness:1; metalness:0; side: double; shader: standard;`);
-  box.setAttribute('animation__rot', 'property=rotation; to=0 360 0; loop=true; dur=12000; easing=linear');
-
-  // LEUCHT-SÄULE: 18 m hoch, gut sichtbar aus der Ferne
-  const beam = document.createElement('a-cylinder');
-  beam.setAttribute('radius','0.8');
-  beam.setAttribute('height','18');
-  beam.setAttribute('position','0 9 0');
-  beam.setAttribute('material','color:#00ffff; opacity:0.28; transparent:true; side:double');
-  beam.setAttribute('animation__fade','property=material.opacity; dir=alternate; to:0.45; dur:1400; loop:true; easing=easeInOutSine');
-
-  // BODENRING als Beacon
-  const ring = document.createElement('a-ring');
-  ring.setAttribute('radius-inner','3.0');
-  ring.setAttribute('radius-outer','3.6');
-  ring.setAttribute('position','0 0.15 0');
-  ring.setAttribute('rotation','-90 0 0');
-  ring.setAttribute('material','color:#00ffff; shader:flat; opacity:0.95; transparent:true');
-  ring.setAttribute('animation__pulse','property=scale; to=1.08 1.08 1; dir=alternate; dur=800; loop=true; easing=easeInOutSine');
-
-  // LABEL (Name) – dreht sich zur Kamera
-  const label = document.createElement('a-text');
-  label.setAttribute('value', d.name || 'Spot');
-  label.setAttribute('color', '#00ffff');
-  label.setAttribute('negate', 'false');
-  label.setAttribute('position', '0 7 0');
-  label.setAttribute('align','center');
-  label.setAttribute('width','8');
-  label.setAttribute('look-at','[gps-camera]');
-
-  parent.appendChild(beam);
-  parent.appendChild(box);
-  parent.appendChild(ring);
-  parent.appendChild(label);
-  sceneEl.appendChild(parent);
-}
-
-/*** Firestore laden ***/
-async function loadRemoteSpots(){
-  try{
-    const snap = await getDocs(collection(db,'spots'));
-    REMOTE_TARGETS = snap.docs.map(d=>{
-      const x=d.data(); return { name:x.name||'Spot', img:x.img||IMG_SRC, lat:x.lat, lon:x.lon };
-    });
-  }catch(e){
-    console.warn('Spots laden fehlschlag:', e);
-  }
-}
-
-/*** Kamera + Sensoren ***/
-async function ensureCameraAndMotion(){
-  await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
-  try{
-    if(typeof DeviceMotionEvent?.requestPermission === 'function'){ await DeviceMotionEvent.requestPermission().catch(()=>{}); }
-    if(typeof DeviceOrientationEvent?.requestPermission === 'function'){ await DeviceOrientationEvent.requestPermission().catch(()=>{}); }
-  }catch(e){}
-}
-
-/*** GPS ***/
-function getOnceLocation(){
-  return new Promise((res,rej)=>{
-    if(!('geolocation' in navigator)) return rej(new Error('Geolocation nicht unterstützt'));
-    navigator.geolocation.getCurrentPosition(res, e=>rej(new Error(e.message)),
-      { enableHighAccuracy:true, timeout:15000, maximumAge:0 });
-  });
-}
-function ensureGeoWatch(){
-  return new Promise((resolve,reject)=>{
-    if(!('geolocation' in navigator)) return reject(new Error('Geolocation nicht unterstützt'));
-    navigator.geolocation.getCurrentPosition(p=>{
-      if(geoWatchId!=null) navigator.geolocation.clearWatch(geoWatchId);
-      geoWatchId = navigator.geolocation.watchPosition(
-        pos=>{ updateHud(pos.coords); },
-        err=>{ statusEl.textContent='GPS-Fehler: '+err.message; },
-        { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
-      );
-      updateHud(p.coords);
-      resolve();
-    },err=>reject(err),{ enableHighAccuracy:true, timeout:15000, maximumAge:0 });
-  });
-}
-
-/*** HUD: Distanz + Richtung + Route-Button zielt auf NÄCHSTEN Spot ***/
-function updateHud(coords){
-  const all=[...BASE_TARGETS, ...REMOTE_TARGETS];
-  if(!all.length) return;
-
-  const { latitude, longitude, accuracy } = coords;
-  const nearest = all
-    .map(t=>({ t, d: distM(latitude, longitude, t.lat, t.lon), brg: bearing(latitude, longitude, t.lat, t.lon) }))
-    .sort((a,b)=>a.d-b.d)[0];
-
-  currentNearest = nearest.t;
-  nearestNameEl.textContent = nearest.t.name || 'Spot';
-  const txt = nearest.d>=1000 ? (nearest.d/1000).toFixed(2)+' km' : Math.round(nearest.d)+' m';
-  distEl.textContent = `Entfernung: ${txt} · GPS ±${Math.round(accuracy)} m`;
-
-  // Pfeil drehen
-  if (deviceHeadingDeg!=null){
-    const turn=((nearest.brg - deviceHeadingDeg)+360)%360;
-    arrowEl.style.transform=`rotate(${turn}deg)`;
-  }
-  statusEl.textContent = `Kurs: ${nearest.brg.toFixed(0)}° · Heading: ${deviceHeadingDeg!=null?deviceHeadingDeg.toFixed(0)+'°':'–'}`;
-
-  // Route-Button aktivieren
-  routeBtn.disabled = false;
-}
-
-/*** Route in Google Maps öffnen (Fußweg) ***/
-function openRoute(){
-  if(!currentNearest) return;
-  const { lat, lon } = currentNearest;
-  const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=walking`;
-  window.open(url, '_blank');
-}
-
-/*** Kompass ***/
-function startHeadingListeners(){
-  window.addEventListener('deviceorientation', e=>{
-    if (typeof e.webkitCompassHeading === 'number'){
-      deviceHeadingDeg = e.webkitCompassHeading; // iOS
-    }else if (e.absolute===true && typeof e.alpha === 'number'){
-      deviceHeadingDeg = 360 - e.alpha; // Android (ungefähr)
-    }
-  }, true);
-  window.addEventListener('deviceorientationabsolute', e=>{
-    if (typeof e.alpha === 'number'){ deviceHeadingDeg = 360 - e.alpha; }
-  }, true);
-}
-
-/*** Geo-Utils ***/
-const toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
-function distM(la1,lo1,la2,lo2){
-  const R=6371e3, dLa=toRad(la2-la1), dLo=toRad(lo2-lo1);
-  const a=Math.sin(dLa/2)**2+Math.cos(toRad(la1))*Math.cos(toRad(la2))*Math.sin(dLo/2)**2;
-  return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-}
-function bearing(la1,lo1,la2,lo2){
-  const φ1=toRad(la1), φ2=toRad(la2), λ1=toRad(lo1), λ2=toRad(lo2);
-  const y=Math.sin(λ2-λ1)*Math.cos(φ2);
-  const x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1);
-  return (toDeg(Math.atan2(y,x))+360)%360;
-}
+      <a-camera></a-camera>
+    </a-scene>
+  `;
+});
 </script>
 </body>
 </html>
