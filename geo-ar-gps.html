@@ -25,7 +25,8 @@
     <h1 style="margin:0 0 8px">Geo-AR starten</h1>
     <p style="opacity:.85;max-width:560px;margin:0 auto 12px">
       Erlaube nacheinander <b>Kamera</b>, <b>Bewegungssensor</b> (iOS) und <b>Standort</b>.
-      Das Bild steht bei <b>48.366184, 10.867701</b>. Zum Testen gibt’s „Hier testen“.
+      Die Bilder stehen bei <b>48.366184, 10.867701</b> und <b>Stettenstraße 7, Augsburg</b>.
+      Zum Testen gibt’s „Hier testen“.
     </p>
     <button id="start" class="btn">Los geht’s</button>
     <button id="spawnHere" class="btn" style="background:#10b981">Hier testen</button>
@@ -37,7 +38,11 @@
 <div id="mount"></div>
 
 <script>
-const TARGET = { lat: 48.366184, lon: 10.867701 };
+const TARGETS = [
+  { lat: 48.366184, lon: 10.867701 },
+  { lat: 48.368905, lon: 10.898445 } // Stettenstraße 7, Augsburg
+];
+
 const statusEl = document.getElementById('status');
 const mount    = document.getElementById('mount');
 const overlay  = document.getElementById('overlay');
@@ -82,22 +87,28 @@ function getOnceLocation(){
 }
 
 function buildScene(){
-  mount.innerHTML = `
-  <a-scene embedded vr-mode-ui="enabled:false"
-           renderer="antialias:true; alpha:true"
-           arjs="sourceType: webcam; videoTexture:true; trackingMethod: best; facingMode: environment;">
+  let imagesHtml = `
     <!-- Debug-Würfel 5 m vor dir -->
     <a-box color="tomato" depth="1" height="1" width="1" position="0 0 -5"></a-box>
+  `;
 
-    <!-- Geo-Bild am Ziel -->
-    <a-image id="artTarget"
-      src="https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg"
-      gps-entity-place="latitude: ${TARGET.lat}; longitude: ${TARGET.lon};"
-      look-at="[gps-camera]"
-      scale="6 4.5 1"></a-image>
+  TARGETS.forEach((t,i)=>{
+    imagesHtml += `
+      <a-image id="artTarget${i}"
+        src="https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg"
+        gps-entity-place="latitude: ${t.lat}; longitude: ${t.lon};"
+        look-at="[gps-camera]"
+        scale="6 4.5 1"></a-image>
+    `;
+  });
 
-    <a-camera gps-camera rotation-reader></a-camera>
-  </a-scene>`;
+  mount.innerHTML = `
+    <a-scene embedded vr-mode-ui="enabled:false"
+             renderer="antialias:true; alpha:true"
+             arjs="sourceType: webcam; videoTexture:true; trackingMethod: best; facingMode: environment;">
+      ${imagesHtml}
+      <a-camera gps-camera rotation-reader></a-camera>
+    </a-scene>`;
   sceneEl = document.querySelector('a-scene');
 }
 
@@ -112,8 +123,8 @@ function watchDistance(){
   };
   navigator.geolocation.watchPosition(
     p => {
-      const d = distM(p.coords.latitude, p.coords.longitude, TARGET.lat, TARGET.lon);
-      statusEl.textContent = `GPS aktiv (±${Math.round(p.coords.accuracy)} m) · Entfernung zum Ziel: ${d.toFixed(1)} m`;
+      const dists = TARGETS.map(t=>distM(p.coords.latitude, p.coords.longitude, t.lat, t.lon));
+      statusEl.textContent = `GPS aktiv (±${Math.round(p.coords.accuracy)} m) · Entfernungen: ${dists.map(d=>d.toFixed(1)+' m').join(' | ')}`;
     },
     e => { statusEl.textContent = 'Standort-Fehler: '+e.message; },
     { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
