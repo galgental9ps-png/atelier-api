@@ -1,16 +1,13 @@
-
-
 <!doctype html>
 <html lang="de">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Geo-AR mit HUD & Firebase (sichtbar fix)</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Geo-AR – Near-Spot Billboard (nicht ortsgebunden)</title>
 
 <!-- A-Frame + AR.js -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
-<!-- ✅ Billboarding-Component (wichtig, damit das Bild dich immer anschaut) -->
 <script src="https://unpkg.com/aframe-look-at-component@1.0.0/dist/aframe-look-at-component.min.js"></script>
 
 <!-- Firebase (ESM) -->
@@ -52,8 +49,7 @@
     <h1 style="margin:0 0 8px">Geo-AR starten</h1>
     <p style="opacity:.9;max-width:640px;margin:0 auto 14px">
       Erlaube <b>Kamera</b>, <b>Standort</b> und ggf. <b>Bewegungssensor</b> (iOS).<br>
-      <b>Los geht’s</b> zeigt Spots + HUD (Richtung & Entfernung).<br>
-      <b>Spot setzen</b> speichert deinen Standort als neuen Spot (PW: <code>1234</code>).
+      Das Bild erscheint <b>vor der Kamera</b>, sobald du einem Spot <b>nahe genug</b> bist.
     </p>
     <button id="start" class="btn">Los geht’s</button>
     <button id="admin" class="btn" style="background:#ef4444">Spot setzen (Admin)</button>
@@ -74,9 +70,9 @@
 <div id="status">Bereit…</div>
 <div id="mount"></div>
 
-<script type="module">
+<script>
 /*** Firebase handles ***/
-const { collection, addDoc, getDocs, serverTimestamp } = window._fs;
+const { collection, addDoc, getDocs, serverTimestamp } = window._fs || {};
 const db = window._db;
 
 /*** UI-Refs ***/
@@ -89,7 +85,10 @@ const nearestNameEl = document.getElementById('nearestName');
 
 /*** Konfiguration ***/
 const IMG_SRC   = "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg";
-const BIG_SCALE = "34 25.5 1";
+const BILLBOARD_SIZE = { w: 1.2, h: 0.9 };        // Größe des Bildes vor der Kamera (Meter)
+const BILLBOARD_OFFSET_Z = -1.2;                  // Abstand vor der Kamera (Meter)
+const SHOW_RADIUS_M = 80;                         // Ab wann das Bild eingeblendet wird (Entfernung zum Spot)
+const HUD_HIDE_BEYOND_M = 5000;                   // HUD aus, wenn Spots zu weit weg
 
 /* Feste Spots + deine 2 neuen */
 const BASE_TARGETS = [
@@ -101,7 +100,9 @@ const BASE_TARGETS = [
 let REMOTE_TARGETS = []; // Firestore
 
 /*** State ***/
-let sceneEl, started=false, deviceHeadingDeg=null, geoWatchId=null;
+let sceneEl, cameraEl, started=false, deviceHeadingDeg=null, geoWatchId=null;
+let billboardEl=null;        // an Kamera geheftetes Bild
+let billboardVisible=false;  // Sichtbarkeit je nach Nähe
 
 /*** Buttons ***/
 document.getElementById('start').addEventListener('click', startViewer);
@@ -113,13 +114,18 @@ async function startViewer(){
     await ensureCameraAndMotion();
     ensureScene();
     overlay.style.display='none';
-    await ensureGeoWatch();                // erster GPS-Fix
-    // Feste + Remote-Spots
-    BASE_TARGETS.forEach(t => appendSpotEntity(t));
+
+    await whenSceneLoaded();
+    await ensureGeoWatch();
+
+    // Billboard an die Kamera anhängen (zunächst unsichtbar)
+    ensureBillboard();
+
+    // Spots laden (nur zur Distanz-/Richtungs-Berechnung)
     await loadRemoteSpots();
-    REMOTE_TARGETS.forEach(t => appendSpotEntity(t));
+
     started=true;
-    statusEl.textContent='Viewer aktiv. HUD zeigt Richtung & Entfernung.';
+    statusEl.textContent='Aktiv. Bild erscheint vor der Kamera, wenn du nah genug am Spot bist.';
   }catch(e){
     statusEl.textContent='Start-Fehler: '+e.message;
   }
@@ -129,13 +135,14 @@ async function startViewer(){
 async function startAdmin(){
   const pw = prompt('Admin-Passwort:');
   if(pw!=='1234'){ alert('Falsches Passwort'); return; }
-
   try{
     await ensureCameraAndMotion();
     ensureScene();
     overlay.style.display='none';
     const pos = await getOnceLocation();
     const { latitude, longitude, accuracy } = pos.coords;
+
+    if (!db) throw new Error('Firestore nicht initialisiert');
 
     await addDoc(collection(db,'spots'),{
       name:'Echo der Gedanken',
@@ -144,9 +151,6 @@ async function startAdmin(){
       lon: Number(longitude.toFixed(6)),
       createdAt: serverTimestamp()
     });
-
-    // sofort lokal anzeigen
-    appendSpotEntity({ name:'Echo der Gedanken', img:IMG_SRC, lat:latitude, lon:longitude });
 
     statusEl.textContent = `Gespeichert: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} (±${Math.round(accuracy)} m)`;
   }catch(e){
@@ -161,47 +165,57 @@ function ensureScene(){
   mount.innerHTML = `
     <a-scene embedded vr-mode-ui="enabled:false"
       renderer="antialias:true; alpha:true"
-      arjs="sourceType: webcam; videoTexture:true; trackingMethod: best; facingMode: environment;">
-      <a-camera gps-camera="gpsMinDistance:0; gpsTimeInterval:1000" rotation-reader></a-camera>
+      arjs="sourceType: webcam; videoTexture:true; facingMode: environment; trackingMethod: best; debugUIEnabled:false">
+      <a-entity id="rig">
+        <a-camera id="cam" gps-new-camera="gpsMinDistance:0; gpsTimeInterval:1000" rotation-reader></a-camera>
+      </a-entity>
     </a-scene>`;
-  sceneEl = document.querySelector('a-scene');
+  sceneEl   = document.querySelector('a-scene');
+  cameraEl  = document.getElementById('cam');
   startHeadingListeners();
 }
 
-/*** Geo-Entity  ✅ jetzt mit look-at + side:double ***/
-function appendSpotEntity(d){
-  const el=document.createElement('a-entity');
-  el.setAttribute('gps-entity-place',`latitude: ${d.lat}; longitude: ${d.lon};`);
-
-  const plane = document.createElement('a-plane');
-  plane.setAttribute('width','36');
-  plane.setAttribute('height','27');
-  plane.setAttribute('position','0 0 -0.02');
-  plane.setAttribute('material','shader: flat; color: #00ffff; opacity: 0.12; transparent:true; side: double');
-  plane.setAttribute('look-at','[gps-camera]');
-
-  const img = document.createElement('a-image');
-  img.setAttribute('src', d.img||IMG_SRC);
-  img.setAttribute('scale', BIG_SCALE);
-  img.setAttribute('material','shader: flat; opacity:1; side: double');
-  img.setAttribute('look-at','[gps-camera]');
-
-  const ring = document.createElement('a-ring');
-  ring.setAttribute('radius-inner','17');
-  ring.setAttribute('radius-outer','17.8');
-  ring.setAttribute('position','0 0 0.02');
-  ring.setAttribute('material','color:#00ffff; shader:flat; opacity:0.95; transparent:true; side: double');
-  ring.setAttribute('animation__pulse','property=scale; to=1.06 1.06 1; dir=alternate; dur=700; loop=true; easing=easeInOutSine');
-
-  el.appendChild(plane);
-  el.appendChild(img);
-  el.appendChild(ring);
-
-  sceneEl.appendChild(el);
+function whenSceneLoaded(){
+  return new Promise(res=>{
+    if (sceneEl.hasLoaded) return res();
+    sceneEl.addEventListener('loaded', res, { once:true });
+  });
 }
 
-/*** Firestore laden ***/
+/*** Billboard (an Kamera geheftet, immer im Blick) ***/
+function ensureBillboard(){
+  if (billboardEl) return;
+  billboardEl = document.createElement('a-entity');
+  billboardEl.setAttribute('position', `0 0 ${BILLBOARD_OFFSET_Z}`); // vor der Kamera
+  billboardEl.setAttribute('visible', 'false'); // erst bei Nähe zeigen
+
+  const plane = document.createElement('a-plane');
+  plane.setAttribute('width',  BILLBOARD_SIZE.w + 0.06);
+  plane.setAttribute('height', BILLBOARD_SIZE.h + 0.06);
+  plane.setAttribute('position','0 0 -0.02');
+  plane.setAttribute('material','shader: flat; color:#00ffff; opacity:.12; transparent:true; side: double');
+
+  const img = document.createElement('a-image');
+  img.setAttribute('src', IMG_SRC);
+  img.setAttribute('crossorigin','anonymous');
+  img.setAttribute('width',  BILLBOARD_SIZE.w);
+  img.setAttribute('height', BILLBOARD_SIZE.h);
+
+  billboardEl.appendChild(plane);
+  billboardEl.appendChild(img);
+  cameraEl.appendChild(billboardEl);
+}
+
+function setBillboardVisible(v){
+  if (!billboardEl) return;
+  if (billboardVisible === v) return;
+  billboardVisible = v;
+  billboardEl.setAttribute('visible', v ? 'true' : 'false');
+}
+
+/*** Spots laden (nur Daten; keine 3D-Platzierung!) ***/
 async function loadRemoteSpots(){
+  if (!db) return;
   try{
     const snap = await getDocs(collection(db,'spots'));
     REMOTE_TARGETS = snap.docs.map(d=>{
@@ -235,35 +249,46 @@ function ensureGeoWatch(){
     navigator.geolocation.getCurrentPosition(p=>{
       if(geoWatchId!=null) navigator.geolocation.clearWatch(geoWatchId);
       geoWatchId = navigator.geolocation.watchPosition(
-        pos=>{ updateHud(pos.coords); },
+        pos=>{ updateUiAndBillboard(pos.coords); },
         err=>{ statusEl.textContent='GPS-Fehler: '+err.message; },
         { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
       );
-      updateHud(p.coords);
+      updateUiAndBillboard(p.coords);
       resolve();
     },err=>reject(err),{ enableHighAccuracy:true, timeout:15000, maximumAge:0 });
   });
 }
 
-/*** HUD: Distanz + Richtung ***/
-function updateHud(coords){
+/*** HUD + Billboard Near-Logic ***/
+function updateUiAndBillboard(coords){
   const all=[...BASE_TARGETS, ...REMOTE_TARGETS];
   if(!all.length) return;
 
   const { latitude, longitude, accuracy } = coords;
-  const nearest = all
+  const ranked = all
     .map(t=>({ t, d: distM(latitude, longitude, t.lat, t.lon), brg: bearing(latitude, longitude, t.lat, t.lon) }))
-    .sort((a,b)=>a.d-b.d)[0];
+    .sort((a,b)=>a.d-b.d);
+  const nearest = ranked[0];
 
+  // HUD
   nearestNameEl.textContent = nearest.t.name || 'Spot';
   const txt = nearest.d>=1000 ? (nearest.d/1000).toFixed(2)+' km' : Math.round(nearest.d)+' m';
   distEl.textContent = `Entfernung: ${txt} · GPS ±${Math.round(accuracy)} m`;
+
+  if (nearest.d > HUD_HIDE_BEYOND_M){
+    arrowEl.style.opacity = '0.2';
+  } else {
+    arrowEl.style.opacity = '1';
+  }
 
   if (deviceHeadingDeg!=null){
     const turn=((nearest.brg - deviceHeadingDeg)+360)%360;
     arrowEl.style.transform=`rotate(${turn}deg)`;
   }
   statusEl.textContent = `Kurs: ${nearest.brg.toFixed(0)}° · Heading: ${deviceHeadingDeg!=null?deviceHeadingDeg.toFixed(0)+'°':'–'}`;
+
+  // Billboard anzeigen/ausblenden je nach Distanz
+  setBillboardVisible(nearest.d <= SHOW_RADIUS_M);
 }
 
 /*** Kompass ***/
@@ -296,11 +321,3 @@ function bearing(la1,lo1,la2,lo2){
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
