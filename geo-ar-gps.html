@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>AR: JPG sofort sichtbar vor der Kamera</title>
+<title>WebAR – Bild sofort mit Fallback</title>
 
 <!-- A-Frame + AR.js -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
@@ -23,7 +23,7 @@
     <h1 style="margin:0 0 10px">AR starten</h1>
     <p style="opacity:.9;max-width:560px;margin:0 auto 14px">
       Erlaube <b>Kamera</b> (und auf iOS zusätzlich <b>Bewegung</b>).<br>
-      Das Bild wird <b>sofort</b> vor deiner Kamera angezeigt.
+      Dein Bild wird zuerst versucht. Falls es nicht lädt, erscheint automatisch ein <b>Fallback-Bild</b>.
     </p>
     <button id="start" class="btn">Los geht’s</button>
   </div>
@@ -34,20 +34,20 @@
 
 <script>
 /*** KONFIG ***/
-const IMG_SRC = "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg";
-const SIZE_M  = { w: 1.6, h: 1.2 };  // Bildgröße in Metern (breiter = auffälliger)
-const DIST_M  = 1.2;                 // Abstand vor der Kamera
-const REQUIRE_NEAR_SPOT = false;     // ← auf true setzen, wenn NUR am Spot zeigen
-const SPOTS = [{ name:"Test-Spot", lat:48.366184, lon:10.867701 }]; // Beispiel
-const SHOW_RADIUS_M = 80;
+// 1) DEIN BILD (kann fehlschlagen)
+const IMG_SRC_PRIMARY  = "https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg";
+// 2) FALLBACK (sehr zuverlässig, Wikimedia)
+const IMG_SRC_FALLBACK = "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg";
 
-/*** UI ***/
+// Größe & Abstand
+const SIZE_M = { w: 1.6, h: 1.2 };
+const DIST_M = 1.2;
+
+/*** UI & STATE ***/
 const overlay = document.getElementById('overlay');
 const statusEl = document.getElementById('status');
 const mount = document.getElementById('mount');
-
-/*** STATE ***/
-let sceneEl, camEl, billboardEl, watchId=null;
+let sceneEl, camEl, boardEl;
 
 /*** START ***/
 document.getElementById('start').addEventListener('click', startAR);
@@ -56,17 +56,11 @@ async function startAR(){
   try{
     await askPermissions();
     ensureScene();
-    await waitSceneLoaded();
+    await sceneLoaded();
 
-    buildBillboard();     // ← Bild sofort bauen
-    showBillboard(true);  // ← und sofort einblenden
+    await buildBoardWithFallback();  // Bild + Fallback sicher aufbauen
     overlay.style.display='none';
     status("AR aktiv – Bild sollte sichtbar sein.");
-
-    if (REQUIRE_NEAR_SPOT){
-      // Wenn du erst am Spot zeigen willst, starte GPS und steuere Sichtbarkeit
-      startGeoWatch();
-    }
   }catch(e){
     status("Start-Fehler: " + (e?.message || e));
   }
@@ -76,118 +70,93 @@ async function startAR(){
 async function askPermissions(){
   // Kamera
   await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
-  // iOS Bewegung
+  // iOS Bewegung (best effort)
   try{
-    if (typeof DeviceMotionEvent?.requestPermission === 'function') {
-      await DeviceMotionEvent.requestPermission().catch(()=>{});
-    }
-    if (typeof DeviceOrientationEvent?.requestPermission === 'function') {
-      await DeviceOrientationEvent.requestPermission().catch(()=>{});
-    }
+    if (typeof DeviceMotionEvent?.requestPermission === 'function') { await DeviceMotionEvent.requestPermission().catch(()=>{}); }
+    if (typeof DeviceOrientationEvent?.requestPermission === 'function') { await DeviceOrientationEvent.requestPermission().catch(()=>{}); }
   }catch{}
 }
 
 /*** SCENE ***/
 function ensureScene(){
   if (sceneEl) return;
+  // Wir preladen beide Bilder in a-assets (mit Cachebustern)
   mount.innerHTML = `
     <a-scene embedded vr-mode-ui="enabled:false"
       renderer="antialias:true; alpha:true"
       arjs="sourceType: webcam; videoTexture:true; facingMode: environment; trackingMethod: best; debugUIEnabled:false">
 
-      <!-- Assets: Bild preloaden (wichtig!) -->
       <a-assets timeout="15000" crossorigin="anonymous">
-        <img id="img1" src="${IMG_SRC}?v=${Date.now()}" crossorigin="anonymous">
+        <img id="imgPrimary"  src="${IMG_SRC_PRIMARY}?v=${Date.now()}"  crossorigin="anonymous">
+        <img id="imgFallback" src="${IMG_SRC_FALLBACK}?v=${Date.now()}" crossorigin="anonymous">
       </a-assets>
 
       <a-entity id="rig">
-        <!-- stabilere Kamera: gps-new-camera ist optional; hier einfache Kamera reicht,
-             wir zeigen immer vor der Kamera an -->
         <a-camera id="cam" rotation-reader></a-camera>
       </a-entity>
     </a-scene>`;
   sceneEl = document.querySelector('a-scene');
-  camEl = document.getElementById('cam');
+  camEl   = document.getElementById('cam');
 }
-function waitSceneLoaded(){
+function sceneLoaded(){
   return new Promise(res=>{
     if (sceneEl.hasLoaded) return res();
     sceneEl.addEventListener('loaded', res, { once:true });
   });
 }
 
-/*** BILD (Billboard) ***/
-function buildBillboard(){
-  if (billboardEl) return;
+/*** BOARD MIT FALLBACK ***/
+async function buildBoardWithFallback(){
+  if (boardEl) return;
 
-  billboardEl = document.createElement('a-entity');
-  billboardEl.setAttribute('position', `0 0 ${-DIST_M}`);
-  billboardEl.setAttribute('visible', 'false');
+  // Ladeversuche prüfen
+  const primary = document.getElementById('imgPrimary');
+  const fallback= document.getElementById('imgFallback');
 
-  // Rahmen (leicht cyan, damit man’s sieht)
+  const primaryOk = await imageOK(primary);
+  let srcId = primaryOk ? '#imgPrimary' : '#imgFallback';
+  status(primaryOk ? "Dein Bild geladen." : "Dein Bild fehlgeschlagen – Fallback geladen.");
+
+  boardEl = document.createElement('a-entity');
+  boardEl.setAttribute('position', `0 0 ${-DIST_M}`);
+
+  // Rahmen
   const frame = document.createElement('a-plane');
   frame.setAttribute('width', SIZE_M.w + 0.08);
   frame.setAttribute('height', SIZE_M.h + 0.08);
   frame.setAttribute('position','0 0 -0.02');
   frame.setAttribute('material', 'shader: flat; color:#00ffff; opacity:.16; transparent:true; side:double');
 
-  // Bild – via <a-assets> (id=img1) → garantiert geladen/CORS sicher
+  // Bild
   const img = document.createElement('a-image');
-  img.setAttribute('src', '#img1');
+  img.setAttribute('src', srcId);
   img.setAttribute('width', SIZE_M.w);
   img.setAttribute('height', SIZE_M.h);
 
-  // Ladefeedback
-  const raw = document.getElementById('img1');
-  raw.addEventListener('load', ()=>status("Bild geladen."));
-  raw.addEventListener('error', ()=>status("Bild-Fehler: Prüfe die URL/CORS."));
-
-  billboardEl.appendChild(frame);
-  billboardEl.appendChild(img);
-  camEl.appendChild(billboardEl);
-}
-
-function showBillboard(v){
-  if (!billboardEl) return;
-  billboardEl.setAttribute('visible', v ? 'true' : 'false');
-}
-
-/*** OPTIONAL: Nur am Spot einblenden ***/
-function startGeoWatch(){
-  if (!('geolocation' in navigator)) {
-    status('Geolocation nicht unterstützt – Billboard bleibt sichtbar.');
-    return;
+  // Falls Primary später doch lädt (z.B. langsames CDN), kannst du automatisch umschalten:
+  if (!primaryOk) {
+    primary.addEventListener('load', ()=>{
+      img.setAttribute('src', '#imgPrimary');
+      status("Dein Bild ist nachgeladen – Fallback ersetzt.");
+    }, { once:true });
   }
-  if (watchId != null) navigator.geolocation.clearWatch(watchId);
-  watchId = navigator.geolocation.watchPosition(
-    pos => {
-      const { latitude, longitude, accuracy } = pos.coords;
-      const nearest = nearestSpot(latitude, longitude);
-      const effective = Math.max(0, nearest.d - (accuracy||0));
-      const inRange = effective <= SHOW_RADIUS_M;
-      showBillboard(inRange);
-      status(`Spot: ${nearest.name} · Distanz: ${Math.round(nearest.d)} m · eff: ${Math.round(effective)} m · GPS ±${Math.round(accuracy||0)} m`);
-    },
-    err => status('GPS-Fehler: ' + err.message),
-    { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
-  );
+
+  boardEl.appendChild(frame);
+  boardEl.appendChild(img);
+  camEl.appendChild(boardEl);
 }
 
-function nearestSpot(lat, lon){
-  let best = { name:'–', d: Infinity };
-  for (const s of SPOTS){
-    const d = distM(lat, lon, s.lat, s.lon);
-    if (d < best.d) best = { name:s.name, d };
-  }
-  return best;
-}
-
-/*** GEO-UTILS ***/
-const toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
-function distM(la1,lo1,la2,lo2){
-  const R=6371e3, dLa=toRad(la2-la1), dLo=toRad(lo2-lo1);
-  const a=Math.sin(dLa/2)**2+Math.cos(toRad(la1))*Math.cos(toRad(la2))*Math.sin(dLo/2)**2;
-  return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+function imageOK(imgEl){
+  return new Promise(resolve=>{
+    if (imgEl.complete && imgEl.naturalWidth>0) return resolve(true);
+    const onLoad  = ()=>{ cleanup(); resolve(true); };
+    const onError = ()=>{ cleanup(); resolve(false); };
+    function cleanup(){ imgEl.removeEventListener('load', onLoad); imgEl.removeEventListener('error', onError); }
+    imgEl.addEventListener('load', onLoad);
+    imgEl.addEventListener('error', onError);
+    // Timeout, falls weder load/error gefeuert wird (schlechte Netze)
+    setTimeout(()=>{ cleanup(); resolve(imgEl.complete && imgEl.naturalWidth>0); }, 6000);
+  });
 }
 
 /*** STATUS ***/
