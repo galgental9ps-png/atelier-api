@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Geo-AR – Echo der Gedanken</title>
+<title>Geo-AR – Echo der Gedanken (Test: Riesig)</title>
 
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
@@ -24,13 +24,13 @@
   <div>
     <h1 style="margin:0 0 8px">Geo-AR starten</h1>
     <p style="opacity:.85;max-width:560px;margin:0 auto 12px">
-      Erlaube nacheinander <b>Kamera</b>, <b>Bewegungssensor</b> (iOS) und <b>Standort</b>.
-      Die Bilder stehen bei <b>48.366184, 10.867701</b> und <b>Stettenstraße 7, Augsburg</b>.
-      Zum Testen gibt’s „Hier testen“.
+      Erlaube Kamera, Bewegungssensor (iOS) und Standort.<br>
+      Riesige Test-Bilder bei Altstadt & Stettenstraße in Augsburg.<br>
+      Zum schnellen Check: „Hier testen“.
     </p>
     <button id="start" class="btn">Los geht’s</button>
     <button id="spawnHere" class="btn" style="background:#10b981">Hier testen</button>
-    <div style="font-size:13px;opacity:.75;margin-top:8px">Tipp: Draußen testen & Kompass kalibrieren (∞-Bewegung).</div>
+    <div style="font-size:13px;opacity:.75;margin-top:8px">Tipp: draußen testen & Kompass kalibrieren (∞-Bewegung).</div>
   </div>
 </div>
 
@@ -39,8 +39,8 @@
 
 <script>
 const TARGETS = [
-  { lat: 48.366184, lon: 10.867701 },
-  { lat: 48.368905, lon: 10.898445 } // Stettenstraße 7, Augsburg
+  { name: 'Altstadt-Spot', lat: 48.366184, lon: 10.867701 },
+  { name: 'Stettenstraße 7', lat: 48.368905, lon: 10.898445 }
 ];
 
 const statusEl = document.getElementById('status');
@@ -89,7 +89,7 @@ function getOnceLocation(){
 function buildScene(){
   let imagesHtml = `
     <!-- Debug-Würfel 5 m vor dir -->
-    <a-box color="tomato" depth="1" height="1" width="1" position="0 0 -5"></a-box>
+    <a-box color="tomato" depth="2" height="2" width="2" position="0 0 -5"></a-box>
   `;
 
   TARGETS.forEach((t,i)=>{
@@ -98,7 +98,7 @@ function buildScene(){
         src="https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg"
         gps-entity-place="latitude: ${t.lat}; longitude: ${t.lon};"
         look-at="[gps-camera]"
-        scale="6 4.5 1"></a-image>
+        scale="30 22.5 1"></a-image>
     `;
   });
 
@@ -112,7 +112,7 @@ function buildScene(){
   sceneEl = document.querySelector('a-scene');
 }
 
-// Distanz zum Ziel im Status anzeigen
+// Distanz mit Namen + nächster Spot
 function watchDistance(){
   if(!('geolocation' in navigator)) return;
   const R=6371e3, toRad=d=>d*Math.PI/180;
@@ -123,15 +123,23 @@ function watchDistance(){
   };
   navigator.geolocation.watchPosition(
     p => {
-      const dists = TARGETS.map(t=>distM(p.coords.latitude, p.coords.longitude, t.lat, t.lon));
-      statusEl.textContent = `GPS aktiv (±${Math.round(p.coords.accuracy)} m) · Entfernungen: ${dists.map(d=>d.toFixed(1)+' m').join(' | ')}`;
+      const { latitude, longitude, accuracy } = p.coords;
+      const entries = TARGETS.map(t => {
+        const d = distM(latitude, longitude, t.lat, t.lon);
+        return { name: t.name, d };
+      });
+
+      entries.sort((a,b)=>a.d-b.d);
+      const nearest = entries[0];
+      const list = entries.map(e => `${e.name}: ${e.d.toFixed(1)} m`).join(' | ');
+      statusEl.textContent = `GPS (±${Math.round(accuracy)} m) · ${list} · Nächster: ${nearest.name}`;
     },
     e => { statusEl.textContent = 'Standort-Fehler: '+e.message; },
     { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
   );
 }
 
-// „Hier testen“: Bild 5 m vor dir spawnen (ohne GPS)
+// „Hier testen“: Riesiges Bild 5 m vor dir
 function spawnHere(){
   if(!sceneEl){
     statusEl.textContent = 'Erst „Los geht’s“ tippen (Kamera/Standort).';
@@ -141,10 +149,10 @@ function spawnHere(){
   localImgEl = document.createElement('a-image');
   localImgEl.setAttribute('src', 'https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg');
   localImgEl.setAttribute('position', '0 0 -5');     // 5 m vor dir
-  localImgEl.setAttribute('scale',    '3 2.25 1');   // etwas kleiner
+  localImgEl.setAttribute('scale',    '15 11.25 1'); // groß
   sceneEl.appendChild(localImgEl);
   overlay.style.display = 'none';
-  statusEl.textContent = 'Testbild 5 m vor dir platziert.';
+  statusEl.textContent = 'Riesiges Testbild 5 m vor dir platziert.';
 }
 </script>
 </body>
