@@ -2,9 +2,10 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AR.js Minimal Test</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>AR.js – Würfel ganz nah</title>
 
+<!-- A-Frame + AR.js -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
 
@@ -12,37 +13,66 @@
   html,body{margin:0;height:100%;overflow:hidden;background:#000}
   #overlay{position:fixed;inset:0;display:grid;place-items:center;background:#000c;z-index:10;color:#fff}
   .btn{padding:12px 16px;border-radius:12px;background:#0ea5e9;color:#fff;font-weight:800;border:0}
+  #hint{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:9;color:#fff;background:#000a;padding:8px 12px;border-radius:10px;font-family:system-ui}
 </style>
 </head>
 <body>
 
 <div id="overlay">
   <div>
-    <h1>AR.js Test</h1>
-    <p>Tippe auf „Start“ – die Kamera öffnet sich und <b>10 m vor dir</b> sollte ein 20×20×20 m Würfel erscheinen.</p>
+    <h1>AR Test – Würfel ganz nah</h1>
+    <p>Tippe auf „Start“. Du solltest einen <b>sehr großen Würfel</b> direkt vor dir sehen.</p>
+    <ul style="text-align:left;max-width:560px;opacity:.9">
+      <li>Seite muss über <b>HTTPS</b> laufen (z.&nbsp;B. Firebase Hosting).</li>
+      <li>Kamera-Zugriff erlauben.</li>
+      <li>Android: Chrome • iOS: Safari.</li>
+    </ul>
     <button id="start" class="btn">Start</button>
   </div>
 </div>
 
+<div id="hint" style="display:none">Wenn du nichts siehst: Handy minimal bewegen/kippen.</div>
 <div id="mount"></div>
 
 <script>
-document.getElementById('start').addEventListener('click', ()=>{
+document.getElementById('start').addEventListener('click', async ()=>{
   document.getElementById('overlay').style.display='none';
+  document.getElementById('hint').style.display='block';
+
+  // Kamera-Rechte aktiv anfragen (hilft manchen Browsern)
+  try{
+    await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
+  }catch(e){ console.warn('getUserMedia warn:', e); }
+
+  // AR-Szene einfügen
   document.getElementById('mount').innerHTML = `
     <a-scene
       embedded
       vr-mode-ui="enabled:false"
       renderer="antialias:true; alpha:true"
       arjs="sourceType: webcam; videoTexture:true; trackingMethod: best; facingMode: environment;">
-
-      <!-- Riesiger Würfel -->
-      <a-box position="0 0 -10"
-             width="20" height="20" depth="20"
-             material="color: #ff00ff; opacity:0.8; shader:flat;"
-             animation="property=rotation; to: 0 360 0; loop:true; dur:10000; easing=linear">
+      
+      <!-- SEHR NAH & SEHR GROSS -->
+      <!-- 1) Riesenwürfel nur 1 m vor dir -->
+      <a-box position="0 0 -1"
+             width="4" height="4" depth="4"
+             material="color: #00ffff; opacity:0.95; shader:flat;"
+             animation="property=rotation; to:0 360 0; loop:true; dur:6000; easing=linear">
       </a-box>
 
+      <!-- 2) Noch größerer Würfel in 2.5 m Entfernung -->
+      <a-box position="0 0 -2.5"
+             width="8" height="8" depth="8"
+             material="color:#ff00ff; opacity:0.4; shader:flat;">
+      </a-box>
+
+      <!-- 3) Heller Ring bei 1 m als visuelle Hilfe -->
+      <a-ring position="0 -0.1 -1" rotation="-90 0 0"
+              radius-inner="1.2" radius-outer="1.6"
+              material="color:#ffffff; opacity:0.9; shader:flat;">
+      </a-ring>
+
+      <!-- Kamera -->
       <a-camera></a-camera>
     </a-scene>
   `;
