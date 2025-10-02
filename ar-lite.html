@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>AR-Lite: Bild an die Wand heften</title>
+<style>
+  :root { color-scheme: dark; }
+  html,body { margin:0; height:100%; overflow:hidden; background:#000; font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, sans-serif; }
+  #camWrap { position:fixed; inset:0; background:#000; }
+  video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); } /* Spiegel für Selfie-UX; wird bei Back-Cam wieder zurückgesetzt */
+  #hud { position:fixed; top:12px; left:50%; transform:translateX(-50%); display:flex; gap:8px; z-index:10; }
+  .btn { appearance:none; border:0; padding:10px 12px; border-radius:12px; font-weight:700; background:#0ea5e9; color:#fff; }
+  .btn.alt { background:#111a; border:1px solid #333; }
+  .chip { background:#000b; border:1px solid #333; color:#fff; padding:8px 10px; border-radius:999px; font-size:12px; }
+  #overlay { position:fixed; bottom:10px; left:50%; transform:translateX(-50%); display:flex; gap:8px; z-index:10; }
+  #panel { position:fixed; right:10px; top:60px; z-index:10; background:#000c; padding:10px; border:1px solid #333; border-radius:12px; display:grid; gap:8px; min-width:220px; }
+  #panel label { font-size:12px; opacity:.9 }
+  #panel input[type="range"] { width: 100%; }
+  /* Bild-Layer */
+  #art { position:absolute; top:50%; left:50%; width:40vmin; aspect-ratio:4/3; transform-origin:50% 50%; transform:translate(-50%,-50%) translateZ(0); pointer-events:auto; will-change: transform, opacity; touch-action:none; }
+  #art.hidden { display:none; }
+  #art.loading { background: repeating-linear-gradient(45deg,#222 0,#222 8px,#2a2a2a 8px,#2a2a2a 16px); }
+  #art img { width:100%; height:100%; object-fit:cover; display:block; border-radius:8px; box-shadow: 0 8px 24px #0009; }
+  #toast { position:fixed; left:50%; bottom:64px; transform:translateX(-50%); background:#000c; color:#fff; padding:10px 14px; border-radius:12px; border:1px solid #333; z-index:10; display:none; }
+</style>
+</head>
+<body>
+
+<div id="camWrap">
+  <video id="video" autoplay playsinline muted></video>
+</div>
+
+<div id="hud">
+  <button class="btn" id="btnPlace">Platzieren</button>
+  <button class="btn alt" id="btnHide">Ein/Aus</button>
+  <div class="chip" id="status">Kamera…</div>
+</div>
+
+<div id="panel">
+  <label>Bild-URL</label>
+  <div style="display:flex; gap:6px">
+    <input id="imgUrl" type="url" placeholder="https://…" style="flex:1; padding:8px 10px; border-radius:10px; border:1px solid #333; background:#111; color:#fff">
+    <button class="btn" id="btnLoad" title="Bild laden">Laden</button>
+  </div>
+  <label>Größe</label>
+  <input id="size" type="range" min="10" max="250" value="40">
+  <label>Drehung</label>
+  <input id="rot" type="range" min="-180" max="180" value="0">
+  <label>Neigung</label>
+  <input id="tilt" type="range" min="-60" max="60" value="0">
+  <label>Deckkraft</label>
+  <input id="alpha" type="range" min="20" max="100" value="100">
+  <button class="btn alt" id="btnReset">Zur Mitte</button>
+</div>
+
+<div id="overlay">
+  <button class="btn alt" id="btnFront">Front/Back</button>
+  <button class="btn alt" id="btnSnap">Foto speichern</button>
+</div>
+
+<div id="toast"></div>
+
+<!-- Bild-Layer -->
+<div id="art" class="hidden loading"><img id="artImg" alt=""></div>
+
+<script>
+(async function(){
+  const qs = new URLSearchParams(location.search);
+  const video = document.getElementById('video');
+  const statusEl = document.getElementById('status');
+  const art = document.getElementById('art');
+  const artImg = document.getElementById('artImg');
+  const imgUrl = document.getElementById('imgUrl');
+  const toast = (msg)=>{ const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; clearTimeout(t._h); t._h=setTimeout(()=>t.style.display='none', 2200); };
+
+  // ===== Kamera starten (zuverlässig, iOS-kompatibel) =====
+  let usingBack = true;
+  async function startCam(){
+    try{
+      const constraints = { video: { facingMode: usingBack ? {ideal:'environment'} : 'user' } , audio:false };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = stream;
+      // Back-Cam nicht spiegeln
+      video.style.transform = usingBack ? 'none' : 'scaleX(-1)';
+      statusEl.textContent = 'Kamera aktiv';
+    }catch(e){
+      statusEl.textContent = 'Kamera-Fehler: '+e.message;
+      toast('⚠️ Kamera nicht verfügbar. Browser/HTTPS prüfen.');
+    }
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    statusEl.textContent = 'Kein getUserMedia';
+    toast('Dein Browser unterstützt keine Kamera-API.');
+  } else {
+    await startCam();
+  }
+
+  // ===== Bild laden (Query oder Eingabefeld) =====
+  const defaultFromQS = qs.get('img') || 'https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg';
+  imgUrl.value = defaultFromQS;
+
+  async function loadImage(url){
+    try{
+      art.classList.remove('hidden');
+      art.classList.add('loading');
+      // asynchron laden
+      const res = await fetch(url, { mode:'cors', cache:'no-cache' });
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const blob = await res.blob();
+      const objURL = URL.createObjectURL(blob);
+      artImg.onload = ()=>{ URL.revokeObjectURL(objURL); art.classList.remove('loading'); statusEl.textContent='Bild geladen'; };
+      artImg.onerror = ()=>{ art.classList.remove('loading'); statusEl.textContent='Bildfehler'; toast('⚠️ Bild konnte nicht geladen werden (CORS/URL prüfen).'); };
+      artImg.src = objURL;
+    }catch(err){
+      statusEl.textContent='Bildfehler';
+      toast('⚠️ '+err.message);
+    }
+  }
+  document.getElementById('btnLoad').addEventListener('click', ()=>loadImage(imgUrl.value.trim()));
+  // initial
+  loadImage(defaultFromQS);
+
+  // ===== Platzieren / Gesten =====
+  let posX = 50, posY = 50, scaleV = parseInt(document.getElementById('size').value,10), rotV = 0, tiltV = 0;
+  function applyTransform(){
+    const s = scaleV; // vmin
+    art.style.width = s+'vmin';
+    art.style.transform = `translate(-50%,-50%) translate(${posX-50}vw, ${posY-50}vh) rotateX(${tiltV}deg) rotate(${rotV}deg)`;
+    art.style.opacity = (document.getElementById('alpha').value/100).toString();
+  }
+  applyTransform();
+
+  // Slider
+  document.getElementById('size').addEventListener('input', e=>{ scaleV = parseInt(e.target.value,10); applyTransform(); });
+  document.getElementById('rot').addEventListener('input', e=>{ rotV = parseInt(e.target.value,10); applyTransform(); });
+  document.getElementById('tilt').addEventListener('input', e=>{ tiltV = parseInt(e.target.value,10); applyTransform(); });
+  document.getElementById('btnReset').addEventListener('click', ()=>{ posX=50; posY=50; rotV=0; tiltV=0; scaleV=40; document.getElementById('size').value=40; document.getElementById('rot').value=0; document.getElementById('tilt').value=0; applyTransform(); });
+
+  // Tippen = zentriert unter dem Finger
+  document.getElementById('camWrap').addEventListener('pointerdown', e=>{
+    posX = (e.clientX / window.innerWidth) * 100;
+    posY = (e.clientY / window.innerHeight) * 100;
+    applyTransform();
+  });
+
+  // Zwei-Finger: Pinch + Rotate
+  let touches = new Map();
+  function dist(a,b){ const dx=a.clientX-b.clientX, dy=a.clientY-b.clientY; return Math.hypot(dx,dy); }
+  function angle(a,b){ return Math.atan2(b.clientY-a.clientY, b.clientX-a.clientX)*180/Math.PI; }
+  let lastD=null, lastA=null;
+  window.addEventListener('pointerdown', e=>{ if(e.pointerType!=='touch') return; touches.set(e.pointerId, e); if(touches.size===2){ const [t1,t2]=[...touches.values()]; lastD=dist(t1,t2); lastA=angle(t1,t2); }});
+  window.addEventListener('pointermove', e=>{
+    if(!touches.has(e.pointerId)) return;
+    touches.set(e.pointerId, e);
+    if(touches.size===2){
+      const [t1,t2]=[...touches.values()];
+      const d=dist(t1,t2), a=angle(t1,t2);
+      if(lastD!=null){ const delta=d-lastD; scaleV = Math.max(10, Math.min(250, scaleV + delta*0.05)); document.getElementById('size').value=scaleV; }
+      if(lastA!=null){ rotV += (a-lastA); document.getElementById('rot').value=Math.round(rotV); }
+      lastD=d; lastA=a; applyTransform();
+    }
+  }, {passive:false});
+  window.addEventListener('pointerup', e=>{ touches.delete(e.pointerId); if(touches.size<2){ lastD=null; lastA=null; } });
+  window.addEventListener('pointercancel', e=>{ touches.delete(e.pointerId); lastD=null; lastA=null; });
+
+  // Buttons
+  document.getElementById('btnPlace').addEventListener('click', ()=>{ toast('Tippe auf die Wand, um das Bild dorthin zu setzen.'); });
+  document.getElementById('btnHide').addEventListener('click', ()=>{
+    art.classList.toggle('hidden');
+    toast(art.classList.contains('hidden') ? 'Bild ausgeblendet' : 'Bild eingeblendet');
+  });
+  document.getElementById('btnFront').addEventListener('click', async ()=>{
+    usingBack = !usingBack; await startCam();
+  });
+
+  // Foto exportieren (Snapshot)
+  document.getElementById('btnSnap').addEventListener('click', async ()=>{
+    try{
+      const w = video.videoWidth || window.innerWidth;
+      const h = video.videoHeight || window.innerHeight;
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+
+      // Kamera-Frame zeichnen
+      ctx.drawImage(video, 0, 0, w, h);
+
+      // Overlay (Position aus CSS nachrechnen)
+      const rect = art.getBoundingClientRect();
+      const img = artImg;
+      if(img.complete && img.naturalWidth>0){
+        const sx = rect.left / window.innerWidth * w;
+        const sy = rect.top  / window.innerHeight * h;
+        const sw = rect.width / window.innerWidth * w;
+        const sh = rect.height/ window.innerHeight * h;
+        // Rotation/Neigung ignorieren im Snapshot (einfacher, robust). Optional: HTMLCanvas rotate/transform.
+        ctx.globalAlpha = parseFloat(getComputedStyle(art).opacity) || 1;
+        ctx.drawImage(img, sx, sy, sw, sh);
+      }
+
+      const url = canvas.toDataURL('image/jpeg', 0.92);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'ar-foto.jpg'; a.click();
+      toast('📷 Foto gespeichert');
+    }catch(e){ toast('⚠️ Snapshot fehlgeschlagen'); }
+  });
+
+  // iOS: Bewegungssensor (optionaler Parallax-Effekt)
+  async function askMotion(){
+    try{
+      if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+        const p = await DeviceMotionEvent.requestPermission();
+        if (p === 'granted') toast('Bewegungssensor aktiviert');
+      }
+    }catch(_) {}
+  }
+  setTimeout(askMotion, 1200);
+})();
+</script>
+</body>
+</html>
