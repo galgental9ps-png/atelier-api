@@ -1,483 +1,78 @@
 <!doctype html>
 <html lang="de">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>AR – Bild an Wand pinnen (WebXR + iOS-Fallback)</title>
-<style>
-  :root { color-scheme: dark; }
-  html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,sans-serif}
-  #ui { position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:30; display:flex; gap:8px; }
-  .btn{appearance:none;border:0;border-radius:12px;padding:10px 12px;font-weight:700;color:#fff;background:#0ea5e9}
-  .btn.alt{background:#111a;border:1px solid #333}
-  #status{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:30;background:#000b;border:1px solid #333;padding:10px 12px;border-radius:10px}
-  canvas{display:block}
-
-  /* ===== Fallback (AR-Lite) ===== */
-  #fallback{position:fixed;inset:0;display:none}
-  #fbVideo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-  #hud{position:absolute;top:60px;left:10px;z-index:30;background:#000c;border:1px solid #333;border-radius:12px;padding:10px;color:#fff;display:none}
-  #hud label{display:block;margin:.4rem 0 .2rem}
-  .s{width:220px}
-  /* Interaktionsfläche */
-  #tapPlane{position:absolute;inset:0}
-  /* perspektivisch „angepinnte“ Kunstfläche */
-  #art3d{position:absolute;left:50%;top:50%;width:min(60vmin,86vw);aspect-ratio:4/3;transform:translate(-50%,-50%);transform-style:preserve-3d;pointer-events:none}
-  #artImg{width:100%;height:100%;display:block;border-radius:10px;box-shadow:0 8px 26px #000a}
-  /* vier Eckgriffe zum Verzerren */
-  .handle{position:absolute;width:18px;height:18px;border-radius:50%;background:#0ea5e9;box-shadow:0 0 0 2px #003947;transform:translate(-50%,-50%);touch-action:none}
-  .h-tl{left:0%; top:0%}
-  .h-tr{left:100%; top:0%}
-  .h-bl{left:0%; top:100%}
-  .h-br{left:100%; top:100%}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>AR Poster – Quick Look (iOS) & Scene Viewer (Android)</title>
+  <meta name="color-scheme" content="dark light" />
+  <style>
+    :root { color-scheme: dark; }
+    html,body { margin:0; height:100%; font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, sans-serif; background:#000; color:#fff; }
+    header { padding:16px; text-align:center; }
+    main { max-width:1000px; margin:0 auto; padding:16px; }
+    .row { display:grid; gap:12px; grid-template-columns: 1fr; }
+    @media (min-width:900px){ .row { grid-template-columns: 1fr 1fr; } }
+    a.btn { display:inline-block; background:#0ea5e9; color:#fff; padding:10px 14px; border-radius:12px; font-weight:700; text-decoration:none; }
+    .note { opacity:.8; font-size:.95rem; }
+    .card { background:#0a0a0a; border:1px solid #222; border-radius:14px; padding:14px; }
+    .center { text-align:center; }
+  </style>
+  <!-- model-viewer (supports AR on Android & iOS) -->
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer/dist/model-viewer.min.js"></script>
 </head>
 <body>
-<div id="ui">
-  <button id="btnStart" class="btn">AR starten</button>
-  <button id="btnReset" class="btn alt" title="Reticle neu suchen" disabled>Neu zielen</button>
-</div>
-<div id="status">Bereit…</div>
+  <header>
+    <h1>AR Poster</h1>
+    <p class="note">Ein Tap auf „In AR ansehen“ öffnet auf iOS den Apple Quick Look (USDZ) und auf Android den Scene Viewer (GLB). Dann kannst du das Poster an die Wand pinnen.</p>
+  </header>
 
-<!-- ===== Fallback UI (iOS/Safari) ===== -->
-<div id="fallback" aria-hidden="true">
-  <video id="fbVideo" autoplay playsinline muted></video>
-  <div id="hud">
-    <div style="font-weight:700;margin-bottom:6px">Fallback: Tippe Wandpunkte</div>
-    <small>1) Tippe vier Punkte (Rechteck an der Wand). 2) Ziehe Ecken für Feinschliff.</small>
-    <label>Deckkraft</label>
-    <input id="fbAlpha" class="s" type="range" min="20" max="100" value="100">
-    <label>Größe (Skalierung)</label>
-    <input id="fbScale" class="s" type="range" min="50" max="200" value="100">
-    <div style="margin-top:.6rem;display:flex;gap:.5rem">
-      <button id="btnClear" class="btn alt">Neu messen</button>
-      <button id="btnSnap" class="btn alt" title="Bild orthogonal ausrichten">Orthografisch</button>
+  <main>
+    <div class="row">
+      <section class="card">
+        <h2 class="center">Direkter AR‑Link (iOS Quick Look)</h2>
+        <!--
+          1) Lege deine USDZ bei GitHub Pages/Server ab.
+          2) Ersetze die URL unten (ios_usdz_url).
+        -->
+        <p class="center">
+          <a class="btn" href="https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.usdz" rel="ar">📱 In AR ansehen</a>
+        </p>
+        <p class="note">Funktioniert auf iPhone/iPad (Safari). Öffnet den System‑AR‑Viewer mit Flächenerkennung (Wand/Boden).</p>
+      </section>
+
+      <section class="card">
+        <h2 class="center">AR im Browser (Android & iOS)</h2>
+        <!--
+          Für Android: GLB/GLTF erforderlich (Scene Viewer).
+          Für iOS: USDZ erforderlich (Quick Look) via ios-src.
+          Beide Dateien sollten den gleichen Inhalt haben (flache Plane mit deinem Bild als Textur).
+        -->
+        <model-viewer
+          src="https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.glb"
+          ios-src="https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.usdz"
+          ar
+          ar-modes="scene-viewer quick-look webxr"
+          ar-scale="fixed"
+          camera-controls
+          exposure="1.0"
+          shadow-intensity="0"
+          style="width:100%; height:70vh; background:#000; border-radius:14px; border:1px solid #222;">
+        </model-viewer>
+        <p class="note">Android öffnet den „Scene Viewer“. iOS öffnet „Quick Look“. 
+          <br>Beide unterstützen echtes Platzieren an Wand/Boden.
+        </p>
+      </section>
     </div>
-  </div>
-  <div id="tapPlane"></div>
-  <div id="art3d">
-    <img id="artImg" alt="">
-    <!-- Griffe -->
-    <div class="handle h-tl" data-k="tl"></div>
-    <div class="handle h-tr" data-k="tr"></div>
-    <div class="handle h-bl" data-k="bl"></div>
-    <div class="handle h-br" data-k="br"></div>
-  </div>
-</div>
 
-<script type="module">
-/* ========= PARAMS ========= */
-const qs = new URLSearchParams(location.search);
-const IMG_URL = qs.get('img') || 'https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg';
-
-/* ========= DOM ========= */
-const statusEl = document.getElementById('status');
-const btnStart = document.getElementById('btnStart');
-const btnReset = document.getElementById('btnReset');
-
-/* ========= FEATURE DETECT ========= */
-const hasWebXR = !!(navigator.xr && navigator.xr.isSessionSupported);
-
-/* ========= THREE + AR ========= */
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.159/build/three.module.js';
-import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.159/examples/jsm/webxr/ARButton.js';
-
-let renderer, scene, camera;
-let xrRefSpace, hitTestSource, hitSourceRequested=false;
-let reticle, placedGroup, texture;
-let lastHitResult = null;
-
-/* ========= Utils ========= */
-async function loadTexture(url){
-  return new Promise((resolve,reject)=>{
-    new THREE.TextureLoader().setCrossOrigin('anonymous').load(url, tex=>{
-      tex.colorSpace = THREE.SRGBColorSpace;
-      resolve(tex);
-    }, undefined, err=>reject(err));
-  });
-}
-function makeReticle(){
-  const geo = new THREE.RingGeometry(0.06,0.08,48).rotateX(-Math.PI/2);
-  const mat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent:true, opacity:0.85 });
-  const m = new THREE.Mesh(geo, mat);
-  m.matrixAutoUpdate = false;
-  m.visible = false;
-  return m;
-}
-function makeArtworkPlane(tex){
-  const aspect = (tex.image?.width || 4) / (tex.image?.height || 3);
-  const height = 0.8; // 80cm
-  const width = height * aspect;
-  const geo = new THREE.PlaneGeometry(width, height);
-  const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.FrontSide });
-  return new THREE.Mesh(geo, mat);
-}
-
-/* ========= WebXR Flow ========= */
-async function startXR(){
-  if (!await navigator.xr.isSessionSupported('immersive-ar')){
-    startFallback();
-    return;
-  }
-
-  statusEl.textContent = 'Starte AR…';
-  renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
-  renderer.setPixelRatio(devicePixelRatio);
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.xr.enabled = true;
-  document.body.appendChild(renderer.domElement);
-
-  scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera();
-  scene.add(new THREE.AmbientLight(0xffffff, 1.0));
-
-  reticle = makeReticle();
-  scene.add(reticle);
-
-  texture = await loadTexture(IMG_URL).catch(()=>null);
-  if(!texture){ statusEl.textContent='Bild konnte nicht geladen werden (CORS/URL)'; }
-
-  const session = await navigator.xr.requestSession('immersive-ar', {
-    requiredFeatures: ['hit-test','anchors','local'],
-    optionalFeatures: ['dom-overlay'],
-    domOverlay: { root: document.body }
-  });
-
-  renderer.xr.setReferenceSpaceType('local');
-  xrRefSpace = await session.requestReferenceSpace('local');
-  await renderer.xr.setSession(session);
-
-  session.addEventListener('end', () => {
-    btnStart.disabled = false; btnStart.textContent = 'AR starten';
-  });
-
-  // Tap -> Anchor setzen
-  session.addEventListener('select', async () => {
-    if (!lastHitResult || !texture) return;
-    try {
-      const pose = lastHitResult.getPose(xrRefSpace);
-      const anchor = await lastHitResult.createAnchor(pose.transform);
-      const anchorSpace = anchor.anchorSpace;
-
-      if (placedGroup) { scene.remove(placedGroup); placedGroup = null; }
-      placedGroup = new THREE.Group();
-      placedGroup.matrixAutoUpdate = false;
-      scene.add(placedGroup);
-
-      const artMesh = makeArtworkPlane(texture);
-      artMesh.position.set(0, 0, 0.005); // minimaler Offset von der Wand
-      placedGroup.add(artMesh);
-
-      renderer.setAnimationLoop((time, frame) => {
-        if (frame) {
-          const anchorPose = frame.getPose(anchorSpace, xrRefSpace);
-          if (anchorPose) {
-            placedGroup.matrix.fromArray(anchorPose.transform.matrix);
-          }
-        }
-        updateHitTest(frame);
-        renderer.render(scene, camera);
-      });
-
-      statusEl.textContent = 'An Wand verankert ✔︎ (tippe erneut zum Neusetzen)';
-    } catch (e) {
-      console.warn('Anchor error', e);
-      statusEl.textContent = 'Konnte nicht verankern (Anchors nicht verfügbar?)';
-    }
-  });
-
-  btnReset.disabled = false;
-  btnReset.onclick = ()=>{ hitSourceRequested=false; statusEl.textContent='Ziele auf Wand/Boden…'; };
-
-  renderer.setAnimationLoop((t, f) => {
-    updateHitTest(f);
-    renderer.render(scene, camera);
-  });
-
-  statusEl.textContent = 'Ziele auf eine Wand (strukturierte Fläche) und tippe';
-}
-
-async function updateHitTest(frame){
-  const session = renderer.xr.getSession();
-  if (!session || !frame) return;
-
-  if (!hitSourceRequested){
-    const viewerSpace = await session.requestReferenceSpace('viewer');
-    // entityTypes: plane/mesh → bessere vertikale Treffer, wenn vom System unterstützt
-    hitTestSource = await session.requestHitTestSource({ space: viewerSpace, entityTypes: ['plane','mesh'] }).catch(async()=>{
-      // Fallback für Browser ohne entityTypes
-      return await session.requestHitTestSource({ space: viewerSpace });
-    });
-    hitSourceRequested = true;
-  }
-
-  const pose = frame.getViewerPose(xrRefSpace);
-  if (!pose || !hitTestSource) return;
-
-  const hits = frame.getHitTestResults(hitTestSource);
-  if (hits.length){
-    const hit = hits[0];
-    lastHitResult = hit;
-    const hitPose = hit.getPose(xrRefSpace);
-    reticle.visible = true;
-    reticle.matrix.fromArray(hitPose.transform.matrix);
-    statusEl.textContent = 'Tippe, um zu verankern';
-  } else {
-    reticle.visible = false;
-    statusEl.textContent = 'Bewege dich / ziele auf strukturierte Fläche…';
-  }
-}
-
-/* ========= Fallback (iOS/Safari): Perspektivisches Wand-Pin ========= */
-function startFallback(){
-  statusEl.textContent = 'Kein WebXR → Fallback aktiv';
-  const fb = document.getElementById('fallback');
-  const hud = document.getElementById('hud');
-  const video = document.getElementById('fbVideo');
-  const art3d = document.getElementById('art3d');
-  const artImg = document.getElementById('artImg');
-  const plane = document.getElementById('tapPlane');
-  const alpha = document.getElementById('fbAlpha');
-  const scale = document.getElementById('fbScale');
-  const btnClear = document.getElementById('btnClear');
-  const btnSnap  = document.getElementById('btnSnap');
-
-  fb.style.display='block';
-  hud.style.display='block';
-
-  // Kamera holen
-  navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ideal:'environment'} }, audio:false })
-    .then(s => video.srcObject = s)
-    .catch(e => statusEl.textContent = 'Kamera-Fehler: '+e.message);
-
-  // Bild laden (CORS-sicher)
-  fetch(IMG_URL, {mode:'cors'}).then(r=>r.blob()).then(b=>{
-    const u = URL.createObjectURL(b);
-    artImg.onload = ()=>URL.revokeObjectURL(u);
-    artImg.src = u;
-  }).catch(()=> statusEl.textContent='Bild konnte nicht geladen werden');
-
-  // Vier Eckpunkte in Bildschirm-Koordinaten sammeln
-  const pts = []; // [{x,y}, ...] Reihenfolge: TL, TR, BR, BL
-  function drawQuad(){
-    // CSS-Perspective Transform via clip-path + matrix? Moderne Browser: use CSS perspective with 3D corner mapping via setTransform on an overlay canvas?
-    // Hier einfacher Trick: per CSS 'transform: matrix3d(...)' mit berechneter Projektionsmatrix:
-    // Wir approximieren per SVG <svg> + <foreignObject> wäre schwer. Stattdessen nutzen wir CSS-‘transform: perspective(...) rotateX/rotateY’ – nicht exakt.
-    // Besser: WebGL auf 2D-Plane rendern. Aber wir bleiben rein mit CSS durch 'clip-path' der Container-Box + background.
-    // Deshalb nutzen wir Offscreen Canvas + drawImage mit projective mapping (Quad-Warp). 
-  }
-
-  // ---------- Quad-Warp via Canvas (präzise Perspektive) ----------
-  // Wir rendern das Bild in ein Canvas, das per CSS absolut positioniert wird.
-  let warpCanvas = document.createElement('canvas');
-  warpCanvas.style.position='absolute';
-  warpCanvas.style.left='0';
-  warpCanvas.style.top='0';
-  warpCanvas.style.width='100%';
-  warpCanvas.style.height='100%';
-  warpCanvas.width = window.innerWidth;
-  warpCanvas.height= window.innerHeight;
-  fb.appendChild(warpCanvas);
-  const wctx = warpCanvas.getContext('2d');
-
-  // Bild als HTMLImageElement parallel laden (für Canvas)
-  const warpImg = new Image();
-  warpImg.crossOrigin = 'anonymous';
-  warpImg.onload = () => { redraw(); };
-  warpImg.src = IMG_URL;
-
-  // Steuerung: Eckgriffe bewegen
-  const handles = [...document.querySelectorAll('.handle')];
-  const corners = { tl:{x:window.innerWidth*0.3,y:window.innerHeight*0.35},
-                    tr:{x:window.innerWidth*0.7,y:window.innerHeight*0.35},
-                    br:{x:window.innerWidth*0.7,y:window.innerHeight*0.75},
-                    bl:{x:window.innerWidth*0.3,y:window.innerHeight*0.75} };
-
-  function placeHandles(){
-    const map = {tl:'.h-tl', tr:'.h-tr', br:'.h-br', bl:'.h-bl'};
-    for (const k of Object.keys(map)){
-      const el = document.querySelector(map[k]);
-      el.style.left = (corners[k].x/window.innerWidth*100)+'%';
-      el.style.top  = (corners[k].y/window.innerHeight*100)+'%';
-    }
-  }
-  placeHandles();
-
-  // Tap setzt nächsten Eckpunkt (TL → TR → BR → BL)
-  let nextKeyOrder = ['tl','tr','br','bl']; let idx=0;
-  plane.addEventListener('pointerdown', e=>{
-    const k = nextKeyOrder[idx % 4];
-    corners[k] = { x:e.clientX, y:e.clientY };
-    idx++;
-    placeHandles();
-    redraw();
-  });
-
-  // Drag an Griffen
-  let dragKey = null;
-  handles.forEach(h=>{
-    h.addEventListener('pointerdown', e=>{
-      dragKey = e.target.dataset.k;
-      e.target.setPointerCapture(e.pointerId);
-    });
-    h.addEventListener('pointermove', e=>{
-      if(!dragKey) return;
-      corners[dragKey] = { x:Math.max(0,Math.min(window.innerWidth, e.clientX)),
-                           y:Math.max(0,Math.min(window.innerHeight,e.clientY)) };
-      placeHandles();
-      redraw();
-    });
-    h.addEventListener('pointerup', ()=>{ dragKey=null; });
-    h.addEventListener('pointercancel', ()=>{ dragKey=null; });
-  });
-
-  // Regler
-  alpha.oninput = ()=>redraw();
-  scale.oninput = ()=>redraw();
-
-  // Buttons
-  btnClear.onclick = ()=>{
-    idx = 0;
-    corners.tl = {x:window.innerWidth*0.3,y:window.innerHeight*0.35};
-    corners.tr = {x:window.innerWidth*0.7,y:window.innerHeight*0.35};
-    corners.br = {x:window.innerWidth*0.7,y:window.innerHeight*0.75};
-    corners.bl = {x:window.innerWidth*0.3,y:window.innerHeight*0.75};
-    placeHandles();
-    redraw();
-  };
-  btnSnap.onclick = ()=>{
-    // Rechteck orthogonalisieren (macht aus dem beliebigen Viereck ein Axis-Aligned Rectangle um dessen Mittelpunkt)
-    const cx = (corners.tl.x+corners.tr.x+corners.br.x+corners.bl.x)/4;
-    const cy = (corners.tl.y+corners.tr.y+corners.br.y+corners.bl.y)/4;
-    const w = Math.hypot(corners.tr.x-corners.tl.x, corners.tr.y-corners.tl.y);
-    const h = Math.hypot(corners.bl.x-corners.tl.x, corners.bl.y-corners.tl.y);
-    const aspect = warpImg.naturalWidth/warpImg.naturalHeight || 4/3;
-    let width = Math.max(80, w);
-    let height = Math.max(60, width/aspect);
-    corners.tl = {x:cx-width/2, y:cy-height/2};
-    corners.tr = {x:cx+width/2, y:cy-height/2};
-    corners.br = {x:cx+width/2, y:cy+height/2};
-    corners.bl = {x:cx-width/2, y:cy+height/2};
-    placeHandles();
-    redraw();
-  };
-
-  // Neu zeichnen (Projektive Abbildung)
-  function redraw(){
-    // Canvas an Viewport anpassen
-    if (warpCanvas.width !== window.innerWidth || warpCanvas.height !== window.innerHeight){
-      warpCanvas.width = window.innerWidth;
-      warpCanvas.height= window.innerHeight;
-    }
-    const opa = parseInt(alpha.value,10)/100;
-    const sc  = parseInt(scale.value,10)/100;
-
-    wctx.clearRect(0,0,warpCanvas.width,warpCanvas.height);
-    if (!warpImg.complete) return;
-
-    // Projektive Texturabbildung (Vierpunkt-Warp)
-    // Wir triangulieren in zwei Dreiecke und verzerren per drawImage Mesh-Warp.
-    // Für Performance & Einfachheit: 40x25 Quad-Mesh
-    const cols = 40, rows = 25;
-    const sx = 0, sy = 0, sw = warpImg.naturalWidth*sc, sh = warpImg.naturalHeight*sc;
-
-    // Quelle (tex) als normiertes Quad [0..1]
-    function interp(a,b,t){ return a + (b-a)*t; }
-    // Ziel-Quad (corners)
-    const TL = corners.tl, TR = corners.tr, BR = corners.br, BL = corners.bl;
-
-    wctx.globalAlpha = opa;
-
-    for (let yi=0; yi<rows; yi++){
-      const v0 = yi/rows, v1 = (yi+1)/rows;
-      // Interpolierte Zielkanten (links & rechts) für zwei benachbarte Zeilen
-      const xl0 = { x:interp(TL.x, BL.x, v0), y:interp(TL.y, BL.y, v0) };
-      const xr0 = { x:interp(TR.x, BR.x, v0), y:interp(TR.y, BR.y, v0) };
-      const xl1 = { x:interp(TL.x, BL.x, v1), y:interp(TL.y, BL.y, v1) };
-      const xr1 = { x:interp(TR.x, BR.x, v1), y:interp(TR.y, BR.y, v1) };
-
-      for (let xi=0; xi<cols; xi++){
-        const u0 = xi/cols, u1 = (xi+1)/cols;
-
-        const p00 = { x:interp(xl0.x, xr0.x, u0), y:interp(xl0.y, xr0.y, u0) };
-        const p10 = { x:interp(xl0.x, xr0.x, u1), y:interp(xl0.y, xr0.y, u1) };
-        const p01 = { x:interp(xl1.x, xr1.x, u0), y:interp(xl1.y, xr1.y, u0) };
-        const p11 = { x:interp(xl1.x, xr1.x, u1), y:interp(xl1.y, xr1.y, u1) };
-
-        // Quelle Rechteck
-        const su0 = sx + sw*u0;
-        const su1 = sx + sw*u1;
-        const sv0 = sy + sh*v0;
-        const sv1 = sy + sh*v1;
-
-        // Zwei Dreiecke: p00-p10-p11 und p00-p11-p01
-        // Hilfsfunktion zum zeichnen eines Textur-Triangles
-        drawTexturedTriangle(wctx, warpImg,
-          su0, sv0, su1, sv0, su1, sv1,
-          p00.x, p00.y, p10.x, p10.y, p11.x, p11.y);
-
-        drawTexturedTriangle(wctx, warpImg,
-          su0, sv0, su1, sv1, su0, sv1,
-          p00.x, p00.y, p11.x, p11.y, p01.x, p01.y);
-      }
-    }
-  }
-
-  // zeichnet ein texturiertes Dreieck via Affin-Mapping (Standardtechnik)
-  function drawTexturedTriangle(ctx, img,
-    sx0, sy0, sx1, sy1, sx2, sy2,
-    dx0, dy0, dx1, dy1, dx2, dy2)
-  {
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(dx0, dy0);
-    ctx.lineTo(dx1, dy1);
-    ctx.lineTo(dx2, dy2);
-    ctx.closePath();
-    ctx.clip();
-
-    // Transformationsmatrix berechnen (Quelle→Ziel)
-    // Quelle in Einheitsdreieck → dx
-    const denom = (sx0*(sy2-sy1) + sx1*(sy0-sy2) + sx2*(sy1-sy0));
-    if (denom === 0) { ctx.restore(); return; }
-
-    // Matrix für Mapping
-    const m11 = dx0*(sy1-sy2) + dx1*(sy2-sy0) + dx2*(sy0-sy1);
-    const m12 = dy0*(sy1-sy2) + dy1*(sy2-sy0) + dy2*(sy0-sy1);
-    const m21 = dx0*(sx2-sx1) + dx1*(sx0-sx2) + dx2*(sx1-sx0);
-    const m22 = dy0*(sx2-sx1) + dy1*(sx0-sx2) + dy2*(sx1-sx0);
-    const dx  = dx0*(sx1*sy2 - sx2*sy1) + dx1*(sx2*sy0 - sx0*sy2) + dx2*(sx0*sy1 - sx1*sy0);
-    const dy  = dy0*(sx1*sy2 - sx2*sy1) + dy1*(sx2*sy0 - sx0*sy2) + dy2*(sx0*sy1 - sx1*sy0);
-
-    ctx.transform(m11/denom, m12/denom, m21/denom, m22/denom, dx/denom, dy/denom);
-    ctx.drawImage(img, 0, 0);
-    ctx.restore();
-  }
-
-  window.addEventListener('resize', ()=>{
-    warpCanvas.width = window.innerWidth;
-    warpCanvas.height= window.innerHeight;
-    placeHandles();
-    redraw();
-  });
-
-  statusEl.textContent = 'Fallback aktiv: Tippe vier Wandpunkte oder ziehe die Ecken.';
-}
-
-/* ========= Boot ========= */
-btnStart.onclick = async ()=>{
-  if (await hasWebXR){
-    try{
-      await startXR();
-      btnStart.disabled = true; btnStart.textContent = 'AR läuft';
-    }catch(e){
-      console.warn(e);
-      startFallback();
-    }
-  }else{
-    startFallback();
-  }
-};
-</script>
+    <section class="card">
+      <h2>Hinweise & Tipps</h2>
+      <ul>
+        <li><b>Dateien:</b> <code>echo_der_gedanken.usdz</code> (für iOS) und <code>echo_der_gedanken.glb</code> (für Android) auf deinem Server bereitstellen.</li>
+        <li><b>Maßstab:</b> Lege die Poster‑Höhe im 3D‑Tool real fest (z. B. 0,8 m). Mit <code>ar-scale="fixed"</code> bleibt die reale Größe erhalten.</li>
+        <li><b>Bildwechsel:</b> Erzeuge für jedes Motiv eigene USDZ/GLB‑Dateien und passe die URLs im Code an.</li>
+        <li><b>Fallback:</b> Auf Desktops ohne AR wird das 3D‑Modell normal im Viewer gezeigt.</li>
+      </ul>
+    </section>
+  </main>
 </body>
 </html>
