@@ -3,220 +3,231 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>AR-Lite: Bild an die Wand heften</title>
+<title>AR Hit-Test (WebXR) – Bild an Wand platzieren</title>
 <style>
   :root { color-scheme: dark; }
-  html,body { margin:0; height:100%; overflow:hidden; background:#000; font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, sans-serif; }
-  #camWrap { position:fixed; inset:0; background:#000; }
-  video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); } /* Spiegel für Selfie-UX; wird bei Back-Cam wieder zurückgesetzt */
-  #hud { position:fixed; top:12px; left:50%; transform:translateX(-50%); display:flex; gap:8px; z-index:10; }
-  .btn { appearance:none; border:0; padding:10px 12px; border-radius:12px; font-weight:700; background:#0ea5e9; color:#fff; }
-  .btn.alt { background:#111a; border:1px solid #333; }
-  .chip { background:#000b; border:1px solid #333; color:#fff; padding:8px 10px; border-radius:999px; font-size:12px; }
-  #overlay { position:fixed; bottom:10px; left:50%; transform:translateX(-50%); display:flex; gap:8px; z-index:10; }
-  #panel { position:fixed; right:10px; top:60px; z-index:10; background:#000c; padding:10px; border:1px solid #333; border-radius:12px; display:grid; gap:8px; min-width:220px; }
-  #panel label { font-size:12px; opacity:.9 }
-  #panel input[type="range"] { width: 100%; }
-  /* Bild-Layer */
-  #art { position:absolute; top:50%; left:50%; width:40vmin; aspect-ratio:4/3; transform-origin:50% 50%; transform:translate(-50%,-50%) translateZ(0); pointer-events:auto; will-change: transform, opacity; touch-action:none; }
-  #art.hidden { display:none; }
-  #art.loading { background: repeating-linear-gradient(45deg,#222 0,#222 8px,#2a2a2a 8px,#2a2a2a 16px); }
-  #art img { width:100%; height:100%; object-fit:cover; display:block; border-radius:8px; box-shadow: 0 8px 24px #0009; }
-  #toast { position:fixed; left:50%; bottom:64px; transform:translateX(-50%); background:#000c; color:#fff; padding:10px 14px; border-radius:12px; border:1px solid #333; z-index:10; display:none; }
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,sans-serif}
+  #ui { position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:20; display:flex; gap:8px; }
+  .btn{appearance:none;border:0;border-radius:12px;padding:10px 12px;font-weight:700;color:#fff;background:#0ea5e9}
+  .btn.alt{background:#111a;border:1px solid #333}
+  #status{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:20;background:#000b;border:1px solid #333;padding:10px 12px;border-radius:10px}
+  canvas{display:block}
+  /* Fallback (AR-Lite) */
+  #fallback{position:fixed;inset:0;display:none}
+  #fbVideo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  #art{position:absolute;top:50%;left:50%;width:40vmin;aspect-ratio:4/3;transform:translate(-50%,-50%);pointer-events:auto;touch-action:none}
+  #art img{width:100%;height:100%;display:block;border-radius:8px;box-shadow:0 8px 24px #0009}
+  #panel{position:fixed;right:10px;top:60px;background:#000c;border:1px solid #333;border-radius:12px;padding:10px;z-index:20;display:none}
+  #panel input[type="range"]{width:200px}
 </style>
 </head>
 <body>
-
-<div id="camWrap">
-  <video id="video" autoplay playsinline muted></video>
+<div id="ui">
+  <button id="btnStart" class="btn">AR starten</button>
+  <button id="btnReset" class="btn alt" title="Reticle neu suchen">Neu zielen</button>
 </div>
+<div id="status">Bereit…</div>
 
-<div id="hud">
-  <button class="btn" id="btnPlace">Platzieren</button>
-  <button class="btn alt" id="btnHide">Ein/Aus</button>
-  <div class="chip" id="status">Kamera…</div>
-</div>
-
-<div id="panel">
-  <label>Bild-URL</label>
-  <div style="display:flex; gap:6px">
-    <input id="imgUrl" type="url" placeholder="https://…" style="flex:1; padding:8px 10px; border-radius:10px; border:1px solid #333; background:#111; color:#fff">
-    <button class="btn" id="btnLoad" title="Bild laden">Laden</button>
+<!-- Fallback UI -->
+<div id="fallback">
+  <video id="fbVideo" autoplay playsinline muted></video>
+  <div id="panel">
+    <div style="color:#fff;margin-bottom:8px">Fallback: Tippe zum Platzieren</div>
+    Größe <input id="fbSize" type="range" min="10" max="250" value="40"><br>
+    Drehung <input id="fbRot" type="range" min="-180" max="180" value="0"><br>
+    Deckkraft <input id="fbAlpha" type="range" min="20" max="100" value="100">
   </div>
-  <label>Größe</label>
-  <input id="size" type="range" min="10" max="250" value="40">
-  <label>Drehung</label>
-  <input id="rot" type="range" min="-180" max="180" value="0">
-  <label>Neigung</label>
-  <input id="tilt" type="range" min="-60" max="60" value="0">
-  <label>Deckkraft</label>
-  <input id="alpha" type="range" min="20" max="100" value="100">
-  <button class="btn alt" id="btnReset">Zur Mitte</button>
+  <div id="art"><img id="artImg" alt=""></div>
 </div>
 
-<div id="overlay">
-  <button class="btn alt" id="btnFront">Front/Back</button>
-  <button class="btn alt" id="btnSnap">Foto speichern</button>
-</div>
+<script type="module">
+/* ========= PARAMS ========= */
+const qs = new URLSearchParams(location.search);
+const IMG_URL = qs.get('img') || 'https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg';
 
-<div id="toast"></div>
+/* ========= DOM ========= */
+const statusEl = document.getElementById('status');
+const btnStart = document.getElementById('btnStart');
+const btnReset = document.getElementById('btnReset');
+btnReset.disabled = true;
 
-<!-- Bild-Layer -->
-<div id="art" class="hidden loading"><img id="artImg" alt=""></div>
+/* ========= FEATURE DETECT ========= */
+const hasWebXR = !!(navigator.xr && navigator.xr.isSessionSupported);
 
-<script>
-(async function(){
-  const qs = new URLSearchParams(location.search);
-  const video = document.getElementById('video');
-  const statusEl = document.getElementById('status');
-  const art = document.getElementById('art');
-  const artImg = document.getElementById('artImg');
-  const imgUrl = document.getElementById('imgUrl');
-  const toast = (msg)=>{ const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; clearTimeout(t._h); t._h=setTimeout(()=>t.style.display='none', 2200); };
+/* ========= THREE + AR ========= */
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.159/build/three.module.js';
+import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.159/examples/jsm/webxr/ARButton.js';
 
-  // ===== Kamera starten (zuverlässig, iOS-kompatibel) =====
-  let usingBack = true;
-  async function startCam(){
+let renderer, scene, camera, xrRefSpace, hitTestSource, hitSourceRequested=false;
+let reticle, placedMesh, texture;
+
+async function loadTexture(url){
+  return new Promise((resolve,reject)=>{
+    new THREE.TextureLoader().setCrossOrigin('anonymous').load(url, tex=>{
+      tex.colorSpace = THREE.SRGBColorSpace;
+      resolve(tex);
+    }, undefined, err=>reject(err));
+  });
+}
+
+function makeReticle(){
+  const geo = new THREE.RingGeometry(0.06,0.08,48).rotateX(-Math.PI/2);
+  const mat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent:true, opacity:0.85 });
+  const m = new THREE.Mesh(geo, mat);
+  m.matrixAutoUpdate = false;
+  m.visible = false;
+  return m;
+}
+
+function makeArtworkPlane(tex){
+  const aspect = tex.image.width/tex.image.height || 4/3;
+  const height = 0.8; // 80 cm standard
+  const width = height*aspect;
+  const geo = new THREE.PlaneGeometry(width, height);
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent:false });
+  const mesh = new THREE.Mesh(geo, mat);
+  return mesh;
+}
+
+async function startXR(){
+  if (!await navigator.xr.isSessionSupported('immersive-ar')){
+    // Fallback
+    startFallback();
+    return;
+  }
+
+  statusEl.textContent = 'Starte AR…';
+  renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+  renderer.setPixelRatio(devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
+  document.body.appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera();
+  scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+
+  reticle = makeReticle();
+  scene.add(reticle);
+
+  texture = await loadTexture(IMG_URL).catch(()=>null);
+  if(!texture){ statusEl.textContent='Bild konnte nicht geladen werden (CORS/URL)'; }
+
+  const session = await navigator.xr.requestSession('immersive-ar', {
+    requiredFeatures: ['hit-test', 'local'],
+    optionalFeatures: ['dom-overlay'],
+    domOverlay: { root: document.body }
+  });
+  renderer.xr.setReferenceSpaceType('local');
+  await renderer.xr.setSession(session);
+
+  session.addEventListener('select', () => {
+    if (reticle?.visible && texture) {
+      // Bild-Plane an Hit-Position verankern
+      if (placedMesh) scene.remove(placedMesh);
+      placedMesh = makeArtworkPlane(texture);
+      placedMesh.position.setFromMatrixPosition(reticle.matrix);
+      // leicht von der Fläche abheben, damit es nicht "flackert"
+      placedMesh.translateZ(0.005);
+      // zur Kamera ausrichten, aber „an Wand“ bleiben:
+      const cam = renderer.xr.getCamera(camera);
+      placedMesh.lookAt(cam.position);
+      placedMesh.rotateX(0); // Wandparallel
+      scene.add(placedMesh);
+      statusEl.textContent = 'Platziert ✔︎ (Tippe erneut, um neu zu setzen)';
+    }
+  });
+
+  btnReset.disabled = false;
+  btnReset.onclick = ()=>{ hitSourceRequested=false; statusEl.textContent='Ziele auf Wand/Boden…'; };
+
+  renderer.setAnimationLoop(onXRFrame);
+  statusEl.textContent = 'Ziele auf Wand/Boden und tippe zum Platzieren';
+}
+
+async function onXRFrame(timestamp, frame){
+  const session = renderer.xr.getSession();
+  const refSpace = renderer.xr.getReferenceSpace();
+
+  if (!hitSourceRequested){
+    const viewerSpace = await session.requestReferenceSpace('viewer');
+    const src = await session.requestHitTestSource({ space: viewerSpace });
+    hitTestSource = src;
+    xrRefSpace = refSpace;
+    hitSourceRequested = true;
+  }
+
+  const pose = frame.getViewerPose(refSpace);
+  if (pose && hitTestSource){
+    const hits = frame.getHitTestResults(hitTestSource);
+    if (hits.length){
+      const hit = hits[0];
+      const hitPose = hit.getPose(xrRefSpace);
+      reticle.visible = true;
+      reticle.matrix.fromArray(hitPose.transform.matrix);
+      statusEl.textContent = 'Tippe, um zu platzieren';
+    }else{
+      reticle.visible = false;
+      statusEl.textContent = 'Ziele auf strukturierte Fläche…';
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+
+/* ========= Fallback (AR-Lite) ========= */
+async function startFallback(){
+  statusEl.textContent = 'Kein WebXR → Fallback aktiv';
+  document.getElementById('fallback').style.display='block';
+  document.getElementById('panel').style.display='block';
+  const video = document.getElementById('fbVideo');
+  try{
+    const s = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ideal:'environment'} }, audio:false });
+    video.srcObject = s;
+  }catch(e){
+    statusEl.textContent = 'Kamera-Fehler: '+e.message;
+  }
+  const art = document.getElementById('art'), img = document.getElementById('artImg');
+  // Bild laden
+  fetch(IMG_URL, {mode:'cors'}).then(r=>r.blob()).then(b=>{
+    const u = URL.createObjectURL(b);
+    img.onload = ()=>URL.revokeObjectURL(u);
+    img.src = u;
+  }).catch(()=> statusEl.textContent='Bild konnte nicht geladen werden');
+
+  // Tippen = versetzen
+  document.getElementById('fallback').addEventListener('pointerdown', e=>{
+    const x = e.clientX/window.innerWidth*100;
+    const y = e.clientY/window.innerHeight*100;
+    art.style.left = x+'%'; art.style.top = y+'%';
+    art.style.transform = 'translate(-50%,-50%) rotate('+document.getElementById('fbRot').value+'deg)';
+  });
+  // Regler
+  const size = document.getElementById('fbSize');
+  const rot  = document.getElementById('fbRot');
+  const alp  = document.getElementById('fbAlpha');
+  size.oninput = ()=>{ art.style.width = size.value+'vmin'; };
+  rot.oninput  = ()=>{ art.style.transform = 'translate(-50%,-50%) rotate('+rot.value+'deg)'; };
+  alp.oninput  = ()=>{ art.style.opacity = (alp.value/100).toString(); };
+}
+
+/* ========= Boot ========= */
+btnStart.onclick = async ()=>{
+  if (hasWebXR){
     try{
-      const constraints = { video: { facingMode: usingBack ? {ideal:'environment'} : 'user' } , audio:false };
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      video.srcObject = stream;
-      // Back-Cam nicht spiegeln
-      video.style.transform = usingBack ? 'none' : 'scaleX(-1)';
-      statusEl.textContent = 'Kamera aktiv';
+      await startXR();
+      // Replace default ARButton prompt with our own button disabled
+      btnStart.disabled = true; btnStart.textContent = 'AR läuft';
     }catch(e){
-      statusEl.textContent = 'Kamera-Fehler: '+e.message;
-      toast('⚠️ Kamera nicht verfügbar. Browser/HTTPS prüfen.');
+      console.warn(e);
+      startFallback();
     }
+  }else{
+    startFallback();
   }
-  if (!navigator.mediaDevices?.getUserMedia) {
-    statusEl.textContent = 'Kein getUserMedia';
-    toast('Dein Browser unterstützt keine Kamera-API.');
-  } else {
-    await startCam();
-  }
+};
 
-  // ===== Bild laden (Query oder Eingabefeld) =====
-  const defaultFromQS = qs.get('img') || 'https://galgental9ps-png.github.io/atelier-api/echo_der_gedanken.jpg';
-  imgUrl.value = defaultFromQS;
-
-  async function loadImage(url){
-    try{
-      art.classList.remove('hidden');
-      art.classList.add('loading');
-      // asynchron laden
-      const res = await fetch(url, { mode:'cors', cache:'no-cache' });
-      if(!res.ok) throw new Error('HTTP '+res.status);
-      const blob = await res.blob();
-      const objURL = URL.createObjectURL(blob);
-      artImg.onload = ()=>{ URL.revokeObjectURL(objURL); art.classList.remove('loading'); statusEl.textContent='Bild geladen'; };
-      artImg.onerror = ()=>{ art.classList.remove('loading'); statusEl.textContent='Bildfehler'; toast('⚠️ Bild konnte nicht geladen werden (CORS/URL prüfen).'); };
-      artImg.src = objURL;
-    }catch(err){
-      statusEl.textContent='Bildfehler';
-      toast('⚠️ '+err.message);
-    }
-  }
-  document.getElementById('btnLoad').addEventListener('click', ()=>loadImage(imgUrl.value.trim()));
-  // initial
-  loadImage(defaultFromQS);
-
-  // ===== Platzieren / Gesten =====
-  let posX = 50, posY = 50, scaleV = parseInt(document.getElementById('size').value,10), rotV = 0, tiltV = 0;
-  function applyTransform(){
-    const s = scaleV; // vmin
-    art.style.width = s+'vmin';
-    art.style.transform = `translate(-50%,-50%) translate(${posX-50}vw, ${posY-50}vh) rotateX(${tiltV}deg) rotate(${rotV}deg)`;
-    art.style.opacity = (document.getElementById('alpha').value/100).toString();
-  }
-  applyTransform();
-
-  // Slider
-  document.getElementById('size').addEventListener('input', e=>{ scaleV = parseInt(e.target.value,10); applyTransform(); });
-  document.getElementById('rot').addEventListener('input', e=>{ rotV = parseInt(e.target.value,10); applyTransform(); });
-  document.getElementById('tilt').addEventListener('input', e=>{ tiltV = parseInt(e.target.value,10); applyTransform(); });
-  document.getElementById('btnReset').addEventListener('click', ()=>{ posX=50; posY=50; rotV=0; tiltV=0; scaleV=40; document.getElementById('size').value=40; document.getElementById('rot').value=0; document.getElementById('tilt').value=0; applyTransform(); });
-
-  // Tippen = zentriert unter dem Finger
-  document.getElementById('camWrap').addEventListener('pointerdown', e=>{
-    posX = (e.clientX / window.innerWidth) * 100;
-    posY = (e.clientY / window.innerHeight) * 100;
-    applyTransform();
-  });
-
-  // Zwei-Finger: Pinch + Rotate
-  let touches = new Map();
-  function dist(a,b){ const dx=a.clientX-b.clientX, dy=a.clientY-b.clientY; return Math.hypot(dx,dy); }
-  function angle(a,b){ return Math.atan2(b.clientY-a.clientY, b.clientX-a.clientX)*180/Math.PI; }
-  let lastD=null, lastA=null;
-  window.addEventListener('pointerdown', e=>{ if(e.pointerType!=='touch') return; touches.set(e.pointerId, e); if(touches.size===2){ const [t1,t2]=[...touches.values()]; lastD=dist(t1,t2); lastA=angle(t1,t2); }});
-  window.addEventListener('pointermove', e=>{
-    if(!touches.has(e.pointerId)) return;
-    touches.set(e.pointerId, e);
-    if(touches.size===2){
-      const [t1,t2]=[...touches.values()];
-      const d=dist(t1,t2), a=angle(t1,t2);
-      if(lastD!=null){ const delta=d-lastD; scaleV = Math.max(10, Math.min(250, scaleV + delta*0.05)); document.getElementById('size').value=scaleV; }
-      if(lastA!=null){ rotV += (a-lastA); document.getElementById('rot').value=Math.round(rotV); }
-      lastD=d; lastA=a; applyTransform();
-    }
-  }, {passive:false});
-  window.addEventListener('pointerup', e=>{ touches.delete(e.pointerId); if(touches.size<2){ lastD=null; lastA=null; } });
-  window.addEventListener('pointercancel', e=>{ touches.delete(e.pointerId); lastD=null; lastA=null; });
-
-  // Buttons
-  document.getElementById('btnPlace').addEventListener('click', ()=>{ toast('Tippe auf die Wand, um das Bild dorthin zu setzen.'); });
-  document.getElementById('btnHide').addEventListener('click', ()=>{
-    art.classList.toggle('hidden');
-    toast(art.classList.contains('hidden') ? 'Bild ausgeblendet' : 'Bild eingeblendet');
-  });
-  document.getElementById('btnFront').addEventListener('click', async ()=>{
-    usingBack = !usingBack; await startCam();
-  });
-
-  // Foto exportieren (Snapshot)
-  document.getElementById('btnSnap').addEventListener('click', async ()=>{
-    try{
-      const w = video.videoWidth || window.innerWidth;
-      const h = video.videoHeight || window.innerHeight;
-      const canvas = document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      const ctx = canvas.getContext('2d');
-
-      // Kamera-Frame zeichnen
-      ctx.drawImage(video, 0, 0, w, h);
-
-      // Overlay (Position aus CSS nachrechnen)
-      const rect = art.getBoundingClientRect();
-      const img = artImg;
-      if(img.complete && img.naturalWidth>0){
-        const sx = rect.left / window.innerWidth * w;
-        const sy = rect.top  / window.innerHeight * h;
-        const sw = rect.width / window.innerWidth * w;
-        const sh = rect.height/ window.innerHeight * h;
-        // Rotation/Neigung ignorieren im Snapshot (einfacher, robust). Optional: HTMLCanvas rotate/transform.
-        ctx.globalAlpha = parseFloat(getComputedStyle(art).opacity) || 1;
-        ctx.drawImage(img, sx, sy, sw, sh);
-      }
-
-      const url = canvas.toDataURL('image/jpeg', 0.92);
-      const a = document.createElement('a');
-      a.href = url; a.download = 'ar-foto.jpg'; a.click();
-      toast('📷 Foto gespeichert');
-    }catch(e){ toast('⚠️ Snapshot fehlgeschlagen'); }
-  });
-
-  // iOS: Bewegungssensor (optionaler Parallax-Effekt)
-  async function askMotion(){
-    try{
-      if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-        const p = await DeviceMotionEvent.requestPermission();
-        if (p === 'granted') toast('Bewegungssensor aktiviert');
-      }
-    }catch(_) {}
-  }
-  setTimeout(askMotion, 1200);
-})();
+// optional: Auto-Start wenn erlaubt (muss per Nutzerinteraktion erfolgen, daher Button)
 </script>
 </body>
 </html>
