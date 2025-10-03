@@ -18,16 +18,17 @@
     .center { text-align:center; }
     .picker { display:flex; gap:8px; justify-content:center; align-items:center; margin:12px 0; flex-wrap:wrap; }
     select { background:#121212; color:#fff; border:1px solid #333; border-radius:10px; padding:8px 10px; }
-    .ar-poster { width:1px; height:1px; opacity:0; pointer-events:none; } /* iOS Quick Look braucht <img> */
+    .ar-poster { width:1px; height:1px; opacity:0; pointer-events:none; } /* iOS Quick Look braucht <img> im <a rel="ar"> */
     .warn { color:#fbbf24; }
     .error { color:#f87171; }
+    .disabled { opacity:.5; pointer-events:none; }
   </style>
   <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer/dist/model-viewer.min.js"></script>
 </head>
 <body>
   <header>
     <h1>AR Poster</h1>
-    <p class="note">Die Motive werden automatisch aus deinem Repo geladen. iOS: Quick Look (USDZ). Android: Scene Viewer (GLB).</p>
+    <p class="note">Motive werden automatisch aus deinem Repo geladen. iOS: Quick Look (USDZ). Android: Scene Viewer (GLB).</p>
   </header>
 
   <main>
@@ -45,20 +46,21 @@
     <div class="row">
       <section class="card center">
         <h2>iOS (Quick Look)</h2>
-        <a id="iosArLink" class="btn" rel="ar" href="#">
+        <!-- WICHTIG: <a rel="ar"> braucht ein <img>-Kind, sonst startet iOS teils nicht -->
+        <a id="iosArLink" class="btn disabled" rel="ar" href="#">
           📱 In AR ansehen (iOS)
-          <img id="iosPoster" class="ar-poster" alt=""
+          <img class="ar-poster" alt=""
                src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAoMBg6E9yjcAAAAASUVORK5CYII=" />
         </a>
-        <p class="note">Safari öffnen, dann Button tippen.</p>
+        <p class="note">Öffne die Seite in Safari. Tippe den Button – Quick Look startet.</p>
       </section>
 
       <section class="card center">
         <h2>Android (Scene Viewer)</h2>
-        <a id="androidArLink" class="btn" href="#" target="_blank" rel="noopener">
+        <a id="androidArLink" class="btn disabled" href="#" target="_blank" rel="noopener">
           🤖 In AR ansehen (Android)
         </a>
-        <p class="note">In Chrome öffnen, dann Button tippen.</p>
+        <p class="note">Öffne die Seite in Chrome. Tippe den Button – Scene Viewer startet.</p>
       </section>
     </div>
 
@@ -74,20 +76,20 @@
         shadow-intensity="0"
         style="width:100%; height:70vh; background:#000; border-radius:14px; border:1px solid #222;">
       </model-viewer>
-      <p class="note">Das ist nur die 3D-Vorschau. Für zuverlässige AR nutze die Buttons oben.</p>
+      <p class="note">Das ist die 3D-Vorschau. Für zuverlässige AR nutze die Buttons oben.</p>
     </section>
   </main>
 
   <script>
-    // ====== KONFIG ======
-    const OWNER = "galgental9ps-png";
-    const REPO  = "atelier-api";
-    const PATH  = "";              // Root des Repos; falls Unterordner, hier z.B. "ar/"
+    // ====== KONFIG (dein Repo) ======
+    const OWNER  = "galgental9ps-png";
+    const REPO   = "atelier-api";
+    const PATH   = "";       // Root. Falls Unterordner, z.B. "ar/"
     const BRANCH = "main";
 
-    // GitHub API (liefert Directory Listing) + RAW-Basis
-    const API  = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${PATH}?ref=${BRANCH}`;
-    const RAW  = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/${PATH}`;
+    // GitHub API & RAW-Basis
+    const API = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${PATH}?ref=${BRANCH}`;
+    const RAW = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/${PATH}`;
 
     const select = document.getElementById('assetSelect');
     const status = document.getElementById('status');
@@ -95,7 +97,10 @@
     const androidArLink = document.getElementById('androidArLink');
     const mv = document.getElementById('mv');
 
-    // Android Scene Viewer Intent
+    const isUSDZ = n => /\.usdz$/i.test(n);
+    const isGLB  = n => /\.glb$/i.test(n);
+    const stem   = n => n.replace(/\.(usdz|glb|gltf)$/i, "");
+
     function buildAndroidIntent(glbUrl, title) {
       const u = new URL("https://arvr.google.com/scene-viewer/1.0");
       u.searchParams.set("file", glbUrl);
@@ -104,88 +109,58 @@
       return u.toString();
     }
 
-    function stem(name) {
-      return name.replace(/\.(usdz|glb|gltf)$/i, "");
-    }
-
     function groupAssets(files) {
-      const usdz = new Map();
-      const glb  = new Map();
+      const usdz = new Map(), glb = new Map();
       for (const f of files) {
         if (f.type !== "file") continue;
-        if (/\.usdz$/i.test(f.name)) usdz.set(stem(f.name), f.name);
-        if (/\.glb$/i.test(f.name))  glb.set(stem(f.name),  f.name);
+        if (isUSDZ(f.name)) usdz.set(stem(f.name), f.name);
+        if (isGLB(f.name))  glb.set(stem(f.name),  f.name);
       }
-      const allStems = new Set([...usdz.keys(), ...glb.keys()]);
-      const pairs = [];
-      for (const s of allStems) {
-        pairs.push({
-          name: s,
-          usdz: usdz.get(s) || null,
-          glb : glb.get(s)  || null
-        });
-      }
-      // sortiert, damit Dropdown stabil bleibt
-      pairs.sort((a,b) => a.name.localeCompare(b.name, 'de'));
-      return pairs;
+      const all = new Set([...usdz.keys(), ...glb.keys()]);
+      const list = [...all].map(s => ({ name: s, usdz: usdz.get(s) || null, glb: glb.get(s) || null }))
+                           .sort((a,b) => a.name.localeCompare(b.name, 'de'));
+      return list;
     }
 
     function populateSelect(pairs) {
       select.innerHTML = "";
-      let firstValid = null;
+      let first = null;
       for (const p of pairs) {
-        // Nur solche zeigen, die mind. eine Datei haben (besser beide)
-        const ok = !!p.usdz || !!p.glb;
-        if (!ok) continue;
+        if (!p.usdz && !p.glb) continue;
         const opt = document.createElement("option");
         opt.value = p.name;
-        opt.textContent = p.name;
-        // Markiere, falls nur eine der beiden fehlt
-        if (!p.usdz || !p.glb) {
-          opt.textContent += (!p.usdz ? " (ohne USDZ)" : "") + (!p.glb ? " (ohne GLB)" : "");
-        }
+        opt.textContent = p.name + (!p.usdz || !p.glb ? ` ${!p.usdz ? "(ohne USDZ)" : ""}${!p.glb ? "(ohne GLB)" : ""}` : "");
         select.appendChild(opt);
-        if (!firstValid) firstValid = p;
+        if (!first) first = p.name;
       }
-      if (!firstValid) throw new Error("Keine passenden Dateien gefunden (.usdz/.glb).");
-      return firstValid.name;
+      if (!first) throw new Error("Keine passenden Dateien gefunden (.usdz/.glb).");
+      return first;
     }
 
     function updateAsset(name, pairs) {
-      const match = pairs.find(p => p.name === name);
-      if (!match) return;
+      const p = pairs.find(x => x.name === name);
+      if (!p) return;
 
-      const usdzUrl = match.usdz ? `${RAW}${match.usdz}` : null;
-      const glbUrl  = match.glb  ? `${RAW}${match.glb}`  : null;
+      const usdzUrl = p.usdz ? `${RAW}${p.usdz}` : null;
+      const glbUrl  = p.glb  ? `${RAW}${p.glb}`  : null;
 
-      // iOS Quick Look Button
-      if (usdzUrl) {
-        iosArLink.href = usdzUrl;
-        iosArLink.classList.remove("disabled");
-      } else {
-        iosArLink.href = "#";
-        iosArLink.classList.add("disabled");
-      }
+      // iOS
+      if (usdzUrl) { iosArLink.href = usdzUrl; iosArLink.classList.remove("disabled"); }
+      else         { iosArLink.href = "#";      iosArLink.classList.add("disabled");  }
 
-      // Android Scene Viewer Button
-      if (glbUrl) {
-        androidArLink.href = buildAndroidIntent(glbUrl, name);
-        androidArLink.classList.remove("disabled");
-      } else {
-        androidArLink.href = "#";
-        androidArLink.classList.add("disabled");
-      }
+      // Android
+      if (glbUrl)  { androidArLink.href = buildAndroidIntent(glbUrl, name); androidArLink.classList.remove("disabled"); }
+      else         { androidArLink.href = "#";                                 androidArLink.classList.add("disabled");  }
 
-      // model-viewer Vorschau
+      // Vorschau
       if (usdzUrl) mv.setAttribute("ios-src", usdzUrl); else mv.removeAttribute("ios-src");
       if (glbUrl)  mv.setAttribute("src", glbUrl);      else mv.removeAttribute("src");
 
-      // Statushinweis
-      if (!match.usdz || !match.glb) {
+      // Hinweis
+      if (!p.usdz || !p.glb) {
         status.innerHTML = `<span class="warn">Hinweis:</span> Für „${name}“ ${
-          !match.usdz && !match.glb ? "fehlen USDZ <u>und</u> GLB" :
-          !match.usdz ? "fehlt USDZ (iOS Quick Look)" :
-          "fehlt GLB (Android Scene Viewer)"
+          !p.usdz && !p.glb ? "fehlen USDZ <u>und</u> GLB" :
+          !p.usdz ? "fehlt USDZ (iOS Quick Look)" : "fehlt GLB (Android Scene Viewer)"
         }.`;
       } else {
         status.textContent = "";
@@ -198,16 +173,37 @@
         const res = await fetch(API, { headers: { "Accept": "application/vnd.github+json" }});
         if (!res.ok) throw new Error(`GitHub API Fehler: ${res.status}`);
         const files = await res.json();
-        const pairs = groupAssets(files);
-        const firstName = populateSelect(pairs);
-        updateAsset(firstName, pairs);
 
-        // Wechsel bei Auswahl
+        // Gruppieren
+        const pairs = groupAssets(files);
+
+        // Fallback: wenn API blockiert, min. circling_flow manuell anbieten
+        if (!Array.isArray(files) || !files.length) {
+          console.warn("GitHub API leer/blocked – Fallback aktiv.");
+          const fallback = [{ name: "circling_flow", usdz: "circling_flow.usdz", glb: "circling_flow.glb" }];
+          populateSelect(fallback);
+          updateAsset("circling_flow", fallback);
+          status.innerHTML = `<span class="warn">Hinweis:</span> Fallback aktiv – nur „circling_flow“ sichtbar.`;
+          return;
+        }
+
+        // Dropdown füllen
+        const first = populateSelect(pairs);
+
+        // Vorauswahl rendern
+        updateAsset(first, pairs);
+
+        // Wechsel
         select.addEventListener("change", e => updateAsset(e.target.value, pairs));
+
         status.textContent = "";
       } catch (err) {
         console.error(err);
-        status.innerHTML = `<span class="error">Fehler:</span> ${String(err.message || err)}`;
+        // Harte Fallback-Route mit circling_flow (deine Datei existiert sicher)
+        const fallback = [{ name: "circling_flow", usdz: "circling_flow.usdz", glb: "circling_flow.glb" }];
+        select.innerHTML = `<option value="circling_flow">circling_flow</option>`;
+        updateAsset("circling_flow", fallback);
+        status.innerHTML = `<span class="error">Fehler:</span> ${String(err.message || err)} – Fallback nur „circling_flow“.`;
       }
     }
 
