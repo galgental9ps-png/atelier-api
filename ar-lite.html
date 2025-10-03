@@ -12,24 +12,23 @@
     main { max-width:1000px; margin:0 auto; padding:16px; }
     .row { display:grid; gap:12px; grid-template-columns: 1fr; }
     @media (min-width:900px){ .row { grid-template-columns: 1fr 1fr; } }
-    .btn { display:inline-flex; align-items:center; gap:.5rem; background:#0ea5e9; color:#fff; padding:10px 14px; border-radius:12px; font-weight:700; text-decoration:none; }
+    a.btn { display:inline-block; background:#0ea5e9; color:#fff; padding:10px 14px; border-radius:12px; font-weight:700; text-decoration:none; }
     .note { opacity:.8; font-size:.95rem; }
     .card { background:#0a0a0a; border:1px solid #222; border-radius:14px; padding:14px; }
     .center { text-align:center; }
     .picker { display:flex; gap:8px; justify-content:center; align-items:center; margin:12px 0; flex-wrap:wrap; }
     select { background:#121212; color:#fff; border:1px solid #333; border-radius:10px; padding:8px 10px; }
-    /* Unsichtbares 1x1-Poster-Bild für <a rel="ar">, Safari verlangt ein img-Kind */
-    .ar-poster { width:1px; height:1px; opacity:0; pointer-events:none; }
   </style>
   <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer/dist/model-viewer.min.js"></script>
 </head>
 <body>
   <header>
     <h1>AR Poster</h1>
-    <p class="note">Wähle ein Motiv. iOS nutzt Apple Quick Look (USDZ), Android den Scene Viewer (GLB).</p>
+    <p class="note">Ein Tap auf „In AR ansehen“ öffnet auf iOS Quick Look (USDZ) und auf Android den Scene Viewer (GLB).</p>
   </header>
 
   <main>
+    <!-- Auswahl -->
     <section class="card">
       <h2 class="center">Motiv wählen</h2>
       <div class="picker">
@@ -37,89 +36,58 @@
         <select id="assetSelect" aria-label="AR-Motiv wählen">
           <option value="echo_der_gedanken" selected>echo_der_gedanken</option>
           <option value="rote_treppe">rote_treppe</option>
-          <option value="circling_flow">circling_flow</option>
+          <option value="circling_flow">circling_flow</option> <!-- NEU -->
         </select>
       </div>
-      <p class="note center">Dateien liegen unter <code>galgental9ps-png/atelier-api/main/</code> als <code>.usdz</code> & <code>.glb</code>.</p>
+      <p class="note center">Für jedes Motiv muss eine <code>.usdz</code> (iOS) und eine <code>.glb</code> (Android) im Repo liegen.</p>
     </section>
 
     <div class="row">
-      <section class="card center">
-        <h2>iOS (Quick Look)</h2>
-        <!-- WICHTIG: <a rel="ar"> muss ein <img> Kind haben -->
-        <a id="iosArLink" class="btn" rel="ar" href="#">
-          📱 In AR ansehen (iOS)
-          <!-- 1x1 transparentes PNG als Poster -->
-          <img id="iosPoster" class="ar-poster"
-            alt=""
-            src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAoMBg6E9yjcAAAAASUVORK5CYII=" />
-        </a>
-        <p class="note">Öffne die Seite in Safari. Tippe den Button – Quick Look startet dann die AR-Ansicht.</p>
+      <section class="card">
+        <h2 class="center">iOS Quick Look</h2>
+        <p class="center">
+          <a id="iosArLink" class="btn" rel="ar" href="#">📱 In AR ansehen</a>
+        </p>
+        <p class="note">Safari auf iPhone/iPad. Öffnet Quick Look mit deinem Poster.</p>
       </section>
 
-      <section class="card center">
-        <h2>Android (Scene Viewer)</h2>
-        <a id="androidArLink" class="btn" href="#" target="_blank" rel="noopener">
-          🤖 In AR ansehen (Android)
-        </a>
-        <p class="note">Öffne die Seite in Chrome. Der Scene Viewer wird mit deinem GLB gestartet.</p>
+      <section class="card">
+        <h2 class="center">Browser-AR (Android & iOS)</h2>
+        <model-viewer
+          id="mv"
+          ar
+          ar-modes="scene-viewer quick-look webxr"
+          ar-scale="fixed"
+          camera-controls
+          exposure="1.0"
+          shadow-intensity="0"
+          style="width:100%; height:70vh; background:#000; border-radius:14px; border:1px solid #222;">
+        </model-viewer>
+        <p class="note">Android öffnet Scene Viewer, iOS Quick Look.</p>
       </section>
     </div>
-
-    <section class="card">
-      <h2>Vorschau im Browser (optional)</h2>
-      <model-viewer
-        id="mv"
-        ar
-        ar-modes="scene-viewer quick-look webxr"
-        ar-scale="fixed"
-        camera-controls
-        exposure="1.0"
-        shadow-intensity="0"
-        style="width:100%; height:70vh; background:#000; border-radius:14px; border:1px solid #222;">
-      </model-viewer>
-      <p class="note">Das ist nur die 3D-Vorschau. Für sicheres AR verwende die Buttons oben.</p>
-    </section>
   </main>
 
   <script>
-    // Dein GitHub-RAW-Basisordner
+    // GitHub RAW Pfad
     const BASE = "https://raw.githubusercontent.com/galgental9ps-png/atelier-api/main/";
 
     const select = document.getElementById('assetSelect');
-    const mv = document.getElementById('mv');
     const iosArLink = document.getElementById('iosArLink');
-    const androidArLink = document.getElementById('androidArLink');
-
-    function buildAndroidIntent(glbUrl, title) {
-      const u = new URL("https://arvr.google.com/scene-viewer/1.0");
-      u.searchParams.set("file", glbUrl);
-      u.searchParams.set("mode", "ar_preferred");
-      u.searchParams.set("title", title || "AR Poster");
-      // Optional: feste Größe / resizable=false via link parameter wird nicht mehr empfohlen;
-      // Maßstab besser im Modell definieren und im Viewer "fixed" setzen.
-      return u.toString();
-    }
+    const mv = document.getElementById('mv');
 
     function updateAsset(name) {
       const usdz = BASE + name + ".usdz";
       const glb  = BASE + name + ".glb";
-
-      // iOS Quick Look: <a rel="ar" href="...usdz"><img/></a>
       iosArLink.href = usdz;
-
-      // Android Scene Viewer Intent
-      androidArLink.href = buildAndroidIntent(glb, name);
-
-      // model-viewer für Vorschau
       mv.setAttribute('ios-src', usdz);
       mv.setAttribute('src', glb);
-      mv.setAttribute('poster', ""); // optional: eigenes Poster-Bild setzen
     }
 
-    // Init + Wechsel
+    // Initial
     updateAsset(select.value);
-    select.addEventListener('change', (e) => updateAsset(e.target.value));
+    // Wechsel bei Auswahl
+    select.addEventListener('change', e => updateAsset(e.target.value));
   </script>
 </body>
 </html>
