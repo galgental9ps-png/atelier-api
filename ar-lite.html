@@ -16,6 +16,8 @@
     .note { opacity:.8; font-size:.95rem; }
     .card { background:#0a0a0a; border:1px solid #222; border-radius:14px; padding:14px; }
     .center { text-align:center; }
+    .picker { display:flex; gap:8px; justify-content:center; align-items:center; margin:12px 0; flex-wrap:wrap; }
+    select, input[type="text"] { background:#121212; color:#fff; border:1px solid #333; border-radius:10px; padding:8px 10px; }
   </style>
   <!-- model-viewer (supports AR on Android & iOS) -->
   <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer/dist/model-viewer.min.js"></script>
@@ -23,32 +25,39 @@
 <body>
   <header>
     <h1>AR Poster</h1>
-    <p class="note">Ein Tap auf „In AR ansehen“ öffnet auf iOS den Apple Quick Look (USDZ) und auf Android den Scene Viewer (GLB). Dann kannst du das Poster an die Wand pinnen.</p>
+    <p class="note">Wähle oben ein Motiv. „In AR ansehen“ öffnet auf iOS den Apple Quick Look (USDZ) und auf Android den Scene Viewer (GLB).</p>
   </header>
 
   <main>
+    <!-- ===== Picker ===== -->
+    <section class="card">
+      <h2 class="center">Motiv wählen</h2>
+      <div class="picker">
+        <label for="assetSelect">Motiv:</label>
+        <select id="assetSelect" aria-label="AR-Motiv wählen">
+          <!-- value = Dateistamm ohne Endung -->
+          <option value="echo_der_gedanken" selected>echo_der_gedanken</option>
+          <option value="rote_treppe">rote_treppe</option>
+        </select>
+      </div>
+      <p class="note center">Die Dateien liegen unter deinem GitHub-Pfad. Für iOS wird <code>.usdz</code>, für Android <code>.glb</code> erwartet.</p>
+    </section>
+
     <div class="row">
       <section class="card">
-        <h2 class="center">Direkter AR‑Link (iOS Quick Look)</h2>
-        <!--
-          1) Lege deine USDZ bei GitHub Pages/Server ab.
-          2) Ersetze die URL unten (ios_usdz_url).
-        -->
+        <h2 class="center">Direkter AR-Link (iOS Quick Look)</h2>
         <p class="center">
-          <a class="btn" href="https://raw.githubusercontent.com/galgental9ps-png/atelier-api/main/echo_der_gedanken.usdz" rel="ar">📱 In AR ansehen</a>
+          <!-- iOS Quick Look -->
+          <a id="iosArLink" class="btn" href="https://raw.githubusercontent.com/galgental9ps-png/atelier-api/main/echo_der_gedanken.usdz" rel="ar">📱 In AR ansehen</a>
         </p>
-        <p class="note">Funktioniert auf iPhone/iPad (Safari). Öffnet den System‑AR‑Viewer mit Flächenerkennung (Wand/Boden).</p>
+        <p class="note">iPhone/iPad (Safari). Öffnet den System-AR-Viewer mit Flächenerkennung.</p>
       </section>
 
       <section class="card">
         <h2 class="center">AR im Browser (Android & iOS)</h2>
-        <!--
-          Für Android: GLB/GLTF erforderlich (Scene Viewer).
-          Für iOS: USDZ erforderlich (Quick Look) via ios-src.
-          Beide Dateien sollten den gleichen Inhalt haben (flache Plane mit deinem Bild als Textur).
-        -->
         <model-viewer
-          src="REPLACE_WITH_YOUR_GLB_IF_AVAILABLE.glb"
+          id="mv"
+          src="https://raw.githubusercontent.com/galgental9ps-png/atelier-api/main/echo_der_gedanken.glb"
           ios-src="https://raw.githubusercontent.com/galgental9ps-png/atelier-api/main/echo_der_gedanken.usdz"
           ar
           ar-modes="scene-viewer quick-look webxr"
@@ -58,21 +67,46 @@
           shadow-intensity="0"
           style="width:100%; height:70vh; background:#000; border-radius:14px; border:1px solid #222;">
         </model-viewer>
-        <p class="note">Android öffnet den „Scene Viewer“. iOS öffnet „Quick Look“. 
-          <br>Beide unterstützen echtes Platzieren an Wand/Boden.
-        </p>
+        <p class="note">Android öffnet „Scene Viewer“, iOS „Quick Look“.</p>
       </section>
     </div>
 
     <section class="card">
       <h2>Hinweise & Tipps</h2>
       <ul>
-        <li><b>Dateien:</b> <code>echo_der_gedanken.usdz</code> (für iOS) und <code>echo_der_gedanken.glb</code> (für Android) auf deinem Server bereitstellen.</li>
-        <li><b>Maßstab:</b> Lege die Poster‑Höhe im 3D‑Tool real fest (z. B. 0,8 m). Mit <code>ar-scale="fixed"</code> bleibt die reale Größe erhalten.</li>
-        <li><b>Bildwechsel:</b> Erzeuge für jedes Motiv eigene USDZ/GLB‑Dateien und passe die URLs im Code an.</li>
-        <li><b>Fallback:</b> Auf Desktops ohne AR wird das 3D‑Modell normal im Viewer gezeigt.</li>
+        <li><b>Dateien:</b> Lege für jedes Motiv <code>.usdz</code> (iOS) und <code>.glb</code> (Android) in <code>galgental9ps-png/atelier-api/main/</code> ab.</li>
+        <li><b>Beispiel:</b> <code>echo_der_gedanken.usdz</code> & <code>echo_der_gedanken.glb</code>, <code>rote_treppe.usdz</code> & <code>rote_treppe.glb</code>.</li>
+        <li><b>Maßstab:</b> In den Modellen festlegen (z. B. 1.0 m Höhe). Mit <code>ar-scale="fixed"</code> bleibt die reale Größe erhalten.</li>
+        <li><b>Mehr Motive?</b> Einfach weitere <code>&lt;option&gt;</code> in die Liste einfügen (nur den Dateistamm angeben).</li>
       </ul>
     </section>
   </main>
+
+  <script>
+    // Basis-URL zu deinen Dateien (anpassen, wenn dein Pfad sich ändert)
+    const BASE = "https://raw.githubusercontent.com/galgental9ps-png/atelier-api/main/";
+
+    const select = document.getElementById('assetSelect');
+    const iosArLink = document.getElementById('iosArLink');
+    const mv = document.getElementById('mv');
+
+    function updateAsset(name) {
+      const usdz = BASE + name + ".usdz";
+      const glb  = BASE + name + ".glb";
+
+      // iOS Quick Look Link
+      iosArLink.href = usdz;
+
+      // model-viewer Quellen
+      mv.setAttribute('ios-src', usdz);
+      mv.setAttribute('src', glb);
+    }
+
+    // Init
+    updateAsset(select.value);
+
+    // Wechsel bei Auswahl
+    select.addEventListener('change', (e) => updateAsset(e.target.value));
+  </script>
 </body>
 </html>
