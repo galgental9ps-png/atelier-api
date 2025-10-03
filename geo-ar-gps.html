@@ -138,7 +138,7 @@ async function startViewer(){
 /*** Start: Admin (Spot speichern) ***/
 async function startAdmin(){
   const pw = prompt('Admin-Passwort:');
-  if(pw!=='1234'){ alert('Falsches Passwort'); return; }
+  if(pw!==''){ alert('Falsches Passwort'); return; }
 
   try{
     await ensureCameraAndMotion();
