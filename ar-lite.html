@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>AR Poster – Auto (Künstler — Titel)</title>
+  <title>AR Poster – Auto-Liste (Quick Look & Scene Viewer)</title>
   <meta name="color-scheme" content="dark light" />
   <style>
     :root { color-scheme: dark; }
@@ -18,19 +18,17 @@
     .center { text-align:center; }
     .picker { display:flex; gap:8px; justify-content:center; align-items:center; margin:12px 0; flex-wrap:wrap; }
     select { background:#121212; color:#fff; border:1px solid #333; border-radius:10px; padding:8px 10px; }
-    .ar-poster { width:1px; height:1px; opacity:0; pointer-events:none; } /* iOS Quick Look benötigt <img> im <a rel="ar"> */
-    .disabled { opacity:.5; pointer-events:none; }
+    .ar-poster { width:1px; height:1px; opacity:0; pointer-events:none; } /* iOS Quick Look braucht <img> im <a rel="ar"> */
     .warn { color:#fbbf24; }
     .error { color:#f87171; }
-    .ok { color:#34d399; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .disabled { opacity:.5; pointer-events:none; }
   </style>
   <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer/dist/model-viewer.min.js"></script>
 </head>
 <body>
   <header>
     <h1>AR Poster</h1>
-    <p class="note">Dateischema im Repo: <code>Schwarzenberger.P-Echo der Gedanken.usdz</code> (+ passende <code>.glb</code>). Anzeige: <b>Künstler — Titel</b>.</p>
+    <p class="note">Motive werden automatisch aus deinem Repo geladen. iOS: Quick Look (USDZ). Android: Scene Viewer (GLB).</p>
   </header>
 
   <main>
@@ -42,20 +40,19 @@
           <option disabled selected>Lade Motive…</option>
         </select>
       </div>
-      <div id="status" class="note center"></div>
-      <div id="debug" class="note mono" style="white-space:pre-wrap; text-align:left; max-width:1000px; margin:10px auto;"></div>
+      <p id="status" class="note center"></p>
     </section>
 
     <div class="row">
       <section class="card center">
         <h2>iOS (Quick Look)</h2>
+        <!-- WICHTIG: <a rel="ar"> braucht ein <img>-Kind, sonst startet iOS teils nicht -->
         <a id="iosArLink" class="btn disabled" rel="ar" href="#">
           📱 In AR ansehen (iOS)
-          <!-- iOS verlangt ein img-Kind -->
           <img class="ar-poster" alt=""
                src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAoMBg6E9yjcAAAAASUVORK5CYII=" />
         </a>
-        <p class="note">In Safari öffnen, dann tippen.</p>
+        <p class="note">Öffne die Seite in Safari. Tippe den Button – Quick Look startet.</p>
       </section>
 
       <section class="card center">
@@ -63,7 +60,7 @@
         <a id="androidArLink" class="btn disabled" href="#" target="_blank" rel="noopener">
           🤖 In AR ansehen (Android)
         </a>
-        <p class="note">In Chrome öffnen, dann tippen.</p>
+        <p class="note">Öffne die Seite in Chrome. Tippe den Button – Scene Viewer startet.</p>
       </section>
     </div>
 
@@ -79,48 +76,31 @@
         shadow-intensity="0"
         style="width:100%; height:70vh; background:#000; border-radius:14px; border:1px solid #222;">
       </model-viewer>
-      <p class="note">Für zuverlässige AR nutze die Buttons oben.</p>
+      <p class="note">Das ist die 3D-Vorschau. Für zuverlässige AR nutze die Buttons oben.</p>
     </section>
   </main>
 
   <script>
-    // ===== Repo-Config =====
+    // ====== KONFIG (dein Repo) ======
     const OWNER  = "galgental9ps-png";
     const REPO   = "atelier-api";
-    const PATH   = "";        // ggf. "ar/"
+    const PATH   = "";       // Root. Falls Unterordner, z.B. "ar/"
     const BRANCH = "main";
 
     // GitHub API & RAW-Basis
     const API = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${PATH}?ref=${BRANCH}`;
-    const RAW_BASE = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/${PATH}`;
+    const RAW = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/${PATH}`;
 
-    // DOM
     const select = document.getElementById('assetSelect');
     const status = document.getElementById('status');
-    const debug  = document.getElementById('debug');
     const iosArLink = document.getElementById('iosArLink');
     const androidArLink = document.getElementById('androidArLink');
     const mv = document.getElementById('mv');
 
-    // Helpers
     const isUSDZ = n => /\.usdz$/i.test(n);
     const isGLB  = n => /\.glb$/i.test(n);
     const stem   = n => n.replace(/\.(usdz|glb|gltf)$/i, "");
 
-    // RAW-URL sicher mit Encoding (Leerzeichen/Umlaute)
-    const rawURL = (name) => RAW_BASE + encodeURIComponent(name);
-
-    // Künstler — Titel aus Dateistamm "Artist-Title"
-    function labelFromStem(s) {
-      // Split nur am ersten "-" (Titel darf weitere Bindestriche enthalten)
-      const idx = s.indexOf("-");
-      if (idx === -1) return s; // kein Bindestrich gefunden
-      const artist = s.slice(0, idx).trim();           // z.B. "Schwarzenberger.P"
-      const title  = s.slice(idx + 1).trim();          // z.B. "Echo der Gedanken"
-      return `${artist} — ${title}`;
-    }
-
-    // Android Scene Viewer Intent
     function buildAndroidIntent(glbUrl, title) {
       const u = new URL("https://arvr.google.com/scene-viewer/1.0");
       u.searchParams.set("file", glbUrl);
@@ -137,78 +117,53 @@
         if (isGLB(f.name))  glb.set(stem(f.name),  f.name);
       }
       const all = new Set([...usdz.keys(), ...glb.keys()]);
-      return [...all].map(s => ({ name: s, label: labelFromStem(s), usdz: usdz.get(s)||null, glb: glb.get(s)||null }))
-                     .sort((a,b)=> a.label.localeCompare(b.label, 'de'));
+      const list = [...all].map(s => ({ name: s, usdz: usdz.get(s) || null, glb: glb.get(s) || null }))
+                           .sort((a,b) => a.name.localeCompare(b.name, 'de'));
+      return list;
     }
 
     function populateSelect(pairs) {
       select.innerHTML = "";
       let first = null;
       for (const p of pairs) {
+        if (!p.usdz && !p.glb) continue;
         const opt = document.createElement("option");
         opt.value = p.name;
-        opt.textContent = p.label + (!p.usdz || !p.glb ? ` ${!p.usdz ? "(ohne USDZ)" : ""}${!p.glb ? "(ohne GLB)" : ""}` : "");
+        opt.textContent = p.name + (!p.usdz || !p.glb ? ` ${!p.usdz ? "(ohne USDZ)" : ""}${!p.glb ? "(ohne GLB)" : ""}` : "");
         select.appendChild(opt);
         if (!first) first = p.name;
       }
+      if (!first) throw new Error("Keine passenden Dateien gefunden (.usdz/.glb).");
       return first;
     }
 
-    async function headOK(url) {
-      try {
-        const res = await fetch(url, { method: "HEAD" });
-        return res.ok ? { ok:true, status:res.status } : { ok:false, status:res.status };
-      } catch (e) {
-        return { ok:false, status:"ERR" };
-      }
-    }
+    function updateAsset(name, pairs) {
+      const p = pairs.find(x => x.name === name);
+      if (!p) return;
 
-    async function validateAndSet(name, p) {
-      const usdzUrl = p.usdz ? rawURL(p.usdz) : null;
-      const glbUrl  = p.glb  ? rawURL(p.glb)  : null;
-      debug.textContent = "";
+      const usdzUrl = p.usdz ? `${RAW}${p.usdz}` : null;
+      const glbUrl  = p.glb  ? `${RAW}${p.glb}`  : null;
 
-      if (usdzUrl) {
-        const r = await headOK(usdzUrl);
-        if (r.ok) {
-          iosArLink.href = usdzUrl; iosArLink.classList.remove("disabled");
-          debug.textContent += `✅ USDZ 200: ${usdzUrl}\n`;
-        } else {
-          iosArLink.href = "#"; iosArLink.classList.add("disabled");
-          debug.textContent += `❌ USDZ ${r.status}: ${usdzUrl}\n`;
-        }
+      // iOS
+      if (usdzUrl) { iosArLink.href = usdzUrl; iosArLink.classList.remove("disabled"); }
+      else         { iosArLink.href = "#";      iosArLink.classList.add("disabled");  }
+
+      // Android
+      if (glbUrl)  { androidArLink.href = buildAndroidIntent(glbUrl, name); androidArLink.classList.remove("disabled"); }
+      else         { androidArLink.href = "#";                                 androidArLink.classList.add("disabled");  }
+
+      // Vorschau
+      if (usdzUrl) mv.setAttribute("ios-src", usdzUrl); else mv.removeAttribute("ios-src");
+      if (glbUrl)  mv.setAttribute("src", glbUrl);      else mv.removeAttribute("src");
+
+      // Hinweis
+      if (!p.usdz || !p.glb) {
+        status.innerHTML = `<span class="warn">Hinweis:</span> Für „${name}“ ${
+          !p.usdz && !p.glb ? "fehlen USDZ <u>und</u> GLB" :
+          !p.usdz ? "fehlt USDZ (iOS Quick Look)" : "fehlt GLB (Android Scene Viewer)"
+        }.`;
       } else {
-        iosArLink.href = "#"; iosArLink.classList.add("disabled");
-        debug.textContent += `⚠️  Keine USDZ für ${name}\n`;
-      }
-
-      if (glbUrl) {
-        const r = await headOK(glbUrl);
-        if (r.ok) {
-          androidArLink.href = buildAndroidIntent(glbUrl, p.label);
-          androidArLink.classList.remove("disabled");
-          debug.textContent += `✅ GLB 200:  ${glbUrl}\n`;
-        } else {
-          androidArLink.href = "#"; androidArLink.classList.add("disabled");
-          debug.textContent += `❌ GLB ${r.status}:  ${glbUrl}\n`;
-        }
-      } else {
-        androidArLink.href = "#"; androidArLink.classList.add("disabled");
-        debug.textContent += `⚠️  Keine GLB für ${name}\n`;
-      }
-
-      // model-viewer Vorschau (nur wenn Links OK)
-      const okUsdz = !iosArLink.classList.contains("disabled");
-      const okGlb  = !androidArLink.classList.contains("disabled");
-      if (okUsdz) mv.setAttribute("ios-src", usdzUrl); else mv.removeAttribute("ios-src");
-      if (okGlb)  mv.setAttribute("src", glbUrl);      else mv.removeAttribute("src");
-
-      if (!okUsdz || !okGlb) {
-        status.innerHTML = `<span class="warn">Hinweis:</span> Für „${p.label}“ ${
-          !okUsdz && !okGlb ? "fehlen USDZ <u>und</u> GLB" : (!okUsdz ? "fehlt USDZ (iOS)" : "fehlt GLB (Android)")
-        } oder Link liefert kein 200.`;
-      } else {
-        status.innerHTML = `<span class="ok">Alles ok:</span> ${p.label}`;
+        status.textContent = "";
       }
     }
 
@@ -218,23 +173,37 @@
         const res = await fetch(API, { headers: { "Accept": "application/vnd.github+json" }});
         if (!res.ok) throw new Error(`GitHub API Fehler: ${res.status}`);
         const files = await res.json();
+
+        // Gruppieren
         const pairs = groupAssets(files);
 
-        if (!pairs.length) throw new Error("Keine .usdz/.glb im angegebenen Pfad gefunden.");
+        // Fallback: wenn API blockiert, min. circling_flow manuell anbieten
+        if (!Array.isArray(files) || !files.length) {
+          console.warn("GitHub API leer/blocked – Fallback aktiv.");
+          const fallback = [{ name: "circling_flow", usdz: "circling_flow.usdz", glb: "circling_flow.glb" }];
+          populateSelect(fallback);
+          updateAsset("circling_flow", fallback);
+          status.innerHTML = `<span class="warn">Hinweis:</span> Fallback aktiv – nur „circling_flow“ sichtbar.`;
+          return;
+        }
 
+        // Dropdown füllen
         const first = populateSelect(pairs);
-        await validateAndSet(first, pairs.find(p=>p.name===first));
 
-        select.addEventListener("change", async (e) => {
-          const name = e.target.value;
-          const p = pairs.find(x => x.name === name);
-          await validateAndSet(name, p);
-        });
+        // Vorauswahl rendern
+        updateAsset(first, pairs);
+
+        // Wechsel
+        select.addEventListener("change", e => updateAsset(e.target.value, pairs));
 
         status.textContent = "";
       } catch (err) {
         console.error(err);
-        status.innerHTML = `<span class="error">Fehler:</span> ${String(err.message || err)}`;
+        // Harte Fallback-Route mit circling_flow (deine Datei existiert sicher)
+        const fallback = [{ name: "circling_flow", usdz: "circling_flow.usdz", glb: "circling_flow.glb" }];
+        select.innerHTML = `<option value="circling_flow">circling_flow</option>`;
+        updateAsset("circling_flow", fallback);
+        status.innerHTML = `<span class="error">Fehler:</span> ${String(err.message || err)} – Fallback nur „circling_flow“.`;
       }
     }
 
