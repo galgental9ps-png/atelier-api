@@ -3,85 +3,236 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title> Atelier Schwarzenberger – Auto-Liste (Quick Look & Scene Viewer)</title>
+  <title>Atelier Schwarzenberger – AR Galerie (Quick Look & Scene Viewer)</title>
   <meta name="color-scheme" content="dark light" />
+  <meta name="theme-color" content="#0b0f14" />
   <style>
-    :root { color-scheme: dark; }
-    html,body { margin:0; height:100%; font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, sans-serif; background:#000; color:#fff; }
-    header { padding:16px; text-align:center; }
-    main { max-width:1000px; margin:0 auto; padding:16px; }
-    .row { display:grid; gap:12px; grid-template-columns: 1fr; }
-    @media (min-width:900px){ .row { grid-template-columns: 1fr 1fr; } }
-    .btn { display:inline-flex; align-items:center; gap:.5rem; background:#0ea5e9; color:#fff; padding:10px 14px; border-radius:12px; font-weight:700; text-decoration:none; }
-    .note { opacity:.8; font-size:.95rem; }
-    .card { background:#0a0a0a; border:1px solid #222; border-radius:14px; padding:14px; }
-    .center { text-align:center; }
-    .picker { display:flex; gap:8px; justify-content:center; align-items:center; margin:12px 0; flex-wrap:wrap; }
-    select { background:#121212; color:#fff; border:1px solid #333; border-radius:10px; padding:8px 10px; }
-    .ar-poster { width:1px; height:1px; opacity:0; pointer-events:none; } /* iOS Quick Look braucht <img> im <a rel="ar"> */
-    .warn { color:#fbbf24; }
-    .error { color:#f87171; }
-    .disabled { opacity:.5; pointer-events:none; }
+    /* ===== Design Tokens ===== */
+    :root{
+      color-scheme: dark;
+      --bg1:#0b0f14;
+      --bg2:#111a2b;
+      --c1:#6ee7ff;  /* Cyan */
+      --c2:#a78bfa;  /* Lila */
+      --text:#e8eef7;
+      --muted:#b4c0d6;
+      --glass: rgba(255,255,255,.08);
+      --glass-stroke: rgba(255,255,255,.16);
+      --glass-weak: rgba(255,255,255,.06);
+      --radius:16px;
+      --blur:14px;
+      --shadow: 0 12px 32px rgba(0,0,0,.45);
+      --border:#1e2635;
+    }
+
+    /* ===== Base / Background ===== */
+    html,body { margin:0; height:100% }
+    body{
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, "Noto Sans", sans-serif;
+      color:var(--text);
+      background:
+        radial-gradient(1200px 700px at 80% -10%, rgba(110,231,255,.15), transparent 55%),
+        radial-gradient(1000px 600px at -10% 110%, rgba(167,139,250,.18), transparent 60%),
+        linear-gradient(180deg, var(--bg2) 0%, var(--bg1) 70%);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .wrap{ min-height:100%; display:grid; grid-template-rows:auto 1fr auto; }
+
+    /* ===== Header (Glass AppBar) ===== */
+    header{
+      position: sticky; top:0; z-index:10;
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      background: rgba(8,12,20,.45);
+      border-bottom: 1px solid rgba(255,255,255,.07);
+    }
+    .bar{
+      max-width:1100px; margin:0 auto;
+      padding:10px clamp(12px,3vw,22px);
+      display:flex; align-items:center; gap:12px;
+    }
+    .logo{
+      display:flex; align-items:center; gap:12px; text-decoration:none; color:inherit;
+    }
+    .logo img{
+      width:40px; height:40px; object-fit:contain; border-radius:10px;
+      filter: drop-shadow(0 5px 14px rgba(0,0,0,.35));
+    }
+    .brand{ display:flex; flex-direction:column; line-height:1.1 }
+    .brand b{ letter-spacing:.2px }
+    .brand small{ color:var(--muted); opacity:.95 }
+
+    /* ===== Main ===== */
+    main{ max-width:1100px; margin: clamp(14px,3.5vw,28px) auto; padding: 0 clamp(12px,3vw,22px); display:grid; gap:16px; }
+    .hero{
+      border:1px solid var(--glass-stroke);
+      background: var(--glass);
+      backdrop-filter: blur(var(--blur)); -webkit-backdrop-filter: blur(var(--blur));
+      border-radius: var(--radius);
+      padding: clamp(14px,3vw,22px);
+      box-shadow: var(--shadow);
+    }
+    .headline{
+      margin:0 0 6px;
+      font-size: clamp(20px,3.5vw,34px);
+      font-weight:800;
+      background: linear-gradient(90deg, #fff 0%, #dff6ff 55%, #ffffff 100%);
+      -webkit-background-clip:text; background-clip:text; color:transparent;
+      letter-spacing:.2px;
+    }
+    .note{ color:var(--muted); font-size:.96rem }
+
+    /* ===== Cards / Grid ===== */
+    .row{ display:grid; gap:12px; grid-template-columns:1fr }
+    @media (min-width:900px){ .row{ grid-template-columns:1fr 1fr } }
+
+    .card{
+      background: var(--glass);
+      border: 1px solid var(--glass-stroke);
+      border-radius: var(--radius);
+      padding:14px;
+      box-shadow: var(--shadow);
+    }
+    .center{ text-align:center }
+
+    .picker{ display:flex; gap:10px; justify-content:center; align-items:center; margin:12px 0; flex-wrap:wrap }
+    label{ color:var(--muted) }
+    select{
+      background: var(--glass-weak); color:#fff; border:1px solid var(--glass-stroke);
+      border-radius:12px; padding:10px 12px; backdrop-filter: blur(10px);
+    }
+
+    /* ===== Buttons (Glass) ===== */
+    .btn{
+      display:inline-flex; align-items:center; gap:.6rem;
+      padding:12px 16px; border-radius:12px; font-weight:800; text-decoration:none;
+      background: linear-gradient(180deg, rgba(110,231,255,.92), rgba(110,231,255,.72));
+      color:#071018; border:1px solid rgba(110,231,255,.95);
+      box-shadow: 0 8px 22px rgba(110,231,255,.25);
+      transition: transform .05s ease, filter .2s ease, opacity .2s ease;
+    }
+    .btn:hover{ filter:saturate(1.1) brightness(1.03) }
+    .btn:active{ transform: translateY(1px) scale(.995) }
+    .btn.secondary{
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      border:1px solid rgba(255,255,255,.12);
+      box-shadow:none;
+    }
+    .disabled{ opacity:.5; pointer-events:none }
+
+    /* ===== model-viewer Frame ===== */
+    model-viewer{
+      width:100%; height:70vh; background: radial-gradient(1200px 600px at 60% 0%, rgba(110,231,255,.06), transparent 55%), #000;
+      border-radius: var(--radius); border:1px solid var(--border);
+    }
+
+    /* AR Helper */
+    .ar-poster{ width:1px; height:1px; opacity:0; pointer-events:none }
+
+    /* Footer */
+    footer{ color:var(--muted); padding:18px clamp(12px,3vw,22px) 28px }
+    .foot-wrap{
+      max-width:1100px; margin:0 auto;
+      display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between;
+    }
+    .chip{
+      padding:6px 12px; border-radius:999px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.04);
+      backdrop-filter: blur(10px);
+    }
   </style>
+
+  <!-- model-viewer -->
   <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer/dist/model-viewer.min.js"></script>
 </head>
 <body>
-  <header>
-    <h1>Atelier Schwarzenberger</h1>
-    <p class="note">Kunst in Augmented Reality -Tauchen Sie ein in die Welt von Atelier Schwarzenberger.
-      Mit unserer AR-Web-App erleben Sie Kunstwerke nicht nur auf dem Bildschirm, sondern direkt in deinem Raum.</p>
-  </header>
-
-  <main>
-    <section class="card">
-      <h2 class="center">Gemälde wählen</h2>
-      <div class="picker">
-        <label for="assetSelect">Motiv:</label>
-        <select id="assetSelect" aria-label="AR-Motiv wählen">
-          <option disabled selected>Lade Motive…</option>
-        </select>
+  <div class="wrap">
+    <!-- ===== Header mit Logo ===== -->
+    <header>
+      <div class="bar">
+        <a class="logo" href="#">
+          <!-- 🔁 Pfad zum Logo anpassen -->
+        <img src="./circling_flow.jpg" alt="Atelier Schwarzenberger – Echo der Gedanken" />
+          <span class="brand">
+            <b>Atelier&nbsp;Schwarzenberger</b>
+            <small>AR Galerie • Echo der Gedanken</small>
+          </span>
+        </a>
       </div>
-      <p id="status" class="note center"></p>
-    </section>
+    </header>
 
-    <div class="row">
-      <section class="card center">
-        <h2>iOS (Quick Look)</h2>
-        <!-- WICHTIG: <a rel="ar"> braucht ein <img>-Kind, sonst startet iOS teils nicht -->
-        <a id="iosArLink" class="btn disabled" rel="ar" href="#">
-          📱 In AR ansehen (iOS)
-          <img class="ar-poster" alt=""
-               src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAoMBg6E9yjcAAAAASUVORK5CYII=" />
-        </a>
-        <p class="note">Öffne die Seite in Safari. Tippe den Button – Quick Look startet.</p>
+    <!-- ===== Hero / Intro ===== -->
+    <main>
+      <section class="hero">
+        <h1 class="headline">Kunst in deiner Umgebung – als AR-Erlebnis</h1>
+        <p class="note">Wähle ein Motiv, starte Quick Look (iOS) oder Scene Viewer (Android) und platziere das Werk im Raum.
+          Die Vorschau unten zeigt das 3D-Modell direkt im Browser.</p>
       </section>
 
-      <section class="card center">
-        <h2>Android (Scene Viewer)</h2>
-        <a id="androidArLink" class="btn disabled" href="#" target="_blank" rel="noopener">
-          🤖 In AR ansehen (Android)
-        </a>
-        <p class="note">Öffne die Seite in Chrome. Tippe den Button – Scene Viewer startet.</p>
+      <!-- ===== Asset Picker ===== -->
+      <section class="card">
+        <h2 class="center">Gemälde wählen</h2>
+        <div class="picker">
+          <label for="assetSelect">Motiv:</label>
+          <select id="assetSelect" aria-label="AR-Motiv wählen">
+            <option disabled selected>Lade Motive…</option>
+          </select>
+        </div>
+        <p id="status" class="note center"></p>
       </section>
-    </div>
 
-    <section class="card">
-      <h2>Vorschau im Browser (optional)</h2>
-      <model-viewer
-        id="mv"
-        ar
-        ar-modes="scene-viewer quick-look webxr"
-        ar-scale="fixed"
-        camera-controls
-        exposure="1.0"
-        shadow-intensity="0"
-        style="width:100%; height:70vh; background:#000; border-radius:14px; border:1px solid #222;">
-      </model-viewer>
-      <p class="note">Das ist die 3D-Vorschau. Für zuverlässige AR nutze die Buttons oben.</p>
-    </section>
-  </main>
+      <!-- ===== AR Buttons ===== -->
+      <div class="row">
+        <section class="card center">
+          <h2>iOS (Quick Look)</h2>
+          <!-- WICHTIG: <a rel="ar"> braucht ein <img>-Kind -->
+          <a id="iosArLink" class="btn disabled" rel="ar" href="#">
+            📱 In AR ansehen (iOS)
+            <img class="ar-poster" alt=""
+                 src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAoMBg6E9yjcAAAAASUVORK5CYII=" />
+          </a>
+          <p class="note">Öffne die Seite in Safari. Tippe den Button – Quick Look startet.</p>
+        </section>
 
+        <section class="card center">
+          <h2>Android (Scene Viewer)</h2>
+          <a id="androidArLink" class="btn secondary disabled" href="#" target="_blank" rel="noopener">
+            🤖 In AR ansehen (Android)
+          </a>
+          <p class="note">Öffne die Seite in Chrome. Tippe den Button – Scene Viewer startet.</p>
+        </section>
+      </div>
+
+      <!-- ===== Browser Vorschau ===== -->
+      <section class="card">
+        <h2>Vorschau im Browser (optional)</h2>
+        <model-viewer
+          id="mv"
+          ar
+          ar-modes="scene-viewer quick-look webxr"
+          ar-scale="fixed"
+          camera-controls
+          exposure="1.0"
+          shadow-intensity="0">
+        </model-viewer>
+        <p class="note">Tipp: Für die zuverlässigste AR-Erfahrung nutze die Buttons oben.</p>
+      </section>
+    </main>
+
+    <footer>
+      <div class="foot-wrap">
+        <div class="chip">© <span id="y"></span> Atelier Schwarzenberger</div>
+        <div class="chip">Design: Glassmorphism&nbsp;Lite</div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- ===== Logic unverändert, nur leicht aufgeräumt ===== -->
   <script>
+    // Jahr im Footer
+    document.getElementById('y').textContent = new Date().getFullYear();
+
     // ====== KONFIG (dein Repo) ======
     const OWNER  = "galgental9ps-png";
     const REPO   = "atelier-api";
@@ -118,9 +269,8 @@
         if (isGLB(f.name))  glb.set(stem(f.name),  f.name);
       }
       const all = new Set([...usdz.keys(), ...glb.keys()]);
-      const list = [...all].map(s => ({ name: s, usdz: usdz.get(s) || null, glb: glb.get(s) || null }))
-                           .sort((a,b) => a.name.localeCompare(b.name, 'de'));
-      return list;
+      return [...all].map(s => ({ name: s, usdz: usdz.get(s) || null, glb: glb.get(s) || null }))
+                     .sort((a,b) => a.name.localeCompare(b.name, 'de'));
     }
 
     function populateSelect(pairs) {
@@ -151,7 +301,7 @@
 
       // Android
       if (glbUrl)  { androidArLink.href = buildAndroidIntent(glbUrl, name); androidArLink.classList.remove("disabled"); }
-      else         { androidArLink.href = "#";                                 androidArLink.classList.add("disabled");  }
+      else         { androidArLink.href = "#"; androidArLink.classList.add("disabled"); }
 
       // Vorschau
       if (usdzUrl) mv.setAttribute("ios-src", usdzUrl); else mv.removeAttribute("ios-src");
@@ -159,7 +309,7 @@
 
       // Hinweis
       if (!p.usdz || !p.glb) {
-        status.innerHTML = `<span class="warn">Hinweis:</span> Für „${name}“ ${
+        status.innerHTML = `<span style="color:#fbbf24">Hinweis:</span> Für „${name}“ ${
           !p.usdz && !p.glb ? "fehlen USDZ <u>und</u> GLB" :
           !p.usdz ? "fehlt USDZ (iOS Quick Look)" : "fehlt GLB (Android Scene Viewer)"
         }.`;
@@ -175,36 +325,27 @@
         if (!res.ok) throw new Error(`GitHub API Fehler: ${res.status}`);
         const files = await res.json();
 
-        // Gruppieren
         const pairs = groupAssets(files);
 
-        // Fallback: wenn API blockiert, min. circling_flow manuell anbieten
         if (!Array.isArray(files) || !files.length) {
           console.warn("GitHub API leer/blocked – Fallback aktiv.");
           const fallback = [{ name: "circling_flow", usdz: "circling_flow.usdz", glb: "circling_flow.glb" }];
           populateSelect(fallback);
           updateAsset("circling_flow", fallback);
-          status.innerHTML = `<span class="warn">Hinweis:</span> Fallback aktiv – nur „circling_flow“ sichtbar.`;
+          status.innerHTML = `<span style="color:#fbbf24">Hinweis:</span> Fallback aktiv – nur „circling_flow“ sichtbar.`;
           return;
         }
 
-        // Dropdown füllen
         const first = populateSelect(pairs);
-
-        // Vorauswahl rendern
         updateAsset(first, pairs);
-
-        // Wechsel
         select.addEventListener("change", e => updateAsset(e.target.value, pairs));
-
         status.textContent = "";
       } catch (err) {
         console.error(err);
-        // Harte Fallback-Route mit circling_flow (deine Datei existiert sicher)
         const fallback = [{ name: "circling_flow", usdz: "circling_flow.usdz", glb: "circling_flow.glb" }];
         select.innerHTML = `<option value="circling_flow">circling_flow</option>`;
         updateAsset("circling_flow", fallback);
-        status.innerHTML = `<span class="error">Fehler:</span> ${String(err.message || err)} – Fallback nur „circling_flow“.`;
+        status.innerHTML = `<span style="color:#f87171">Fehler:</span> ${String(err.message || err)} – Fallback nur „circling_flow“.`;
       }
     }
 
