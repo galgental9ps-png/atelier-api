@@ -1,0 +1,347 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta http-equiv="Content-Style-Type" content="text/css">
+  <title></title>
+  <meta name="Generator" content="Cocoa HTML Writer">
+  <meta name="CocoaVersion" content="2575.7">
+  <style type="text/css">
+    p.p1 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica}
+    p.p2 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica; min-height: 14.0px}
+    p.p3 {margin: 0.0px 0.0px 0.0px 0.0px; font: 13.0px 'Helvetica Neue'}
+    span.s1 {font: 12.0px Helvetica}
+  </style>
+</head>
+<body>
+<p class="p1">&lt;!doctype html&gt;</p>
+<p class="p1">&lt;html lang="de"&gt;</p>
+<p class="p1">&lt;head&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;meta charset="utf-8" /&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;meta name="viewport" content="width=device-width, initial-scale=1" /&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;title&gt;3D-Atelier – Atelier Schwarzenberger&lt;/title&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;meta name="color-scheme" content="dark light" /&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;style&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>html,body { margin:0; height:100%; background:#0f0f12; overflow:hidden; }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>#app { position:fixed; inset:0; }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.hud {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>position:fixed; left:12px; bottom:12px; z-index:10;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color:#c9c9d0; font:14px/1.4 system-ui,Segoe UI,Roboto;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>background:linear-gradient(180deg,#0008,#0004); border:1px solid #ffffff22;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>border-radius:10px; padding:10px 12px; backdrop-filter:blur(4px)</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.hud b { color:#fff }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.top-right {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>position:fixed; right:12px; top:12px; z-index:11; display:flex; gap:8px; align-items:center;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.btn {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>appearance:none; border:1px solid #ffffff22; background:#1a1a22; color:#eee;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>padding:8px 10px; border-radius:10px; cursor:pointer; font:14px/1 system-ui;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.btn:active { transform:translateY(1px) }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>/* Mobile Joystick */</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.joy-wrap {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>position:fixed; right:12px; bottom:12px; width:120px; height:120px; z-index:10;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>opacity:.85; touch-action:none; user-select:none; display:none;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.joy-base, .joy-stick {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>position:absolute; border-radius:999px; background:#0008; border:1px solid #ffffff26;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.joy-base { inset:0; }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.joy-stick { width:56px; height:56px; left:32px; top:32px; background:#fff2; }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>@media (hover:none) and (pointer:coarse) {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>.joy-wrap { display:block; }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>a.skip {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>position:fixed; left:-9999px; top:auto; width:1px; height:1px; overflow:hidden;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;/style&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;!-- Three.js + Controls (verlässlicher CDN) --&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/three.min.js"&gt;&lt;/script&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/examples/js/controls/OrbitControls.min.js"&gt;&lt;/script&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/examples/js/controls/PointerLockControls.min.js"&gt;&lt;/script&gt;</p>
+<p class="p1">&lt;/head&gt;</p>
+<p class="p1">&lt;body&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;a class="skip" href="#app"&gt;Zum Inhalt springen&lt;/a&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;div id="app"&gt;&lt;/div&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;div class="top-right"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;button id="walkBtn" class="btn" title="Maus klicken, um sich umzusehen"&gt;🎮 Laufmodus aktivieren&lt;/button&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;button id="resetBtn" class="btn"&gt;Ansicht zentrieren&lt;/button&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;/div&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;div class="hud"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;div&gt;&lt;b&gt;Steuerung&lt;/b&gt;: WASD/←→↑↓ = Laufen · Mausklick = Umschauen · &lt;b&gt;Klicke ein Bild&lt;/b&gt; für Produktseite&lt;/div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;div&gt;Mobil: Joystick unten rechts zum Bewegen, Tippen zum Auswählen&lt;/div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;/div&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;!-- Virtueller Joystick (nur Mobil) --&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;div class="joy-wrap" id="joy"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;div class="joy-base"&gt;&lt;/div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;div class="joy-stick" id="joyStick"&gt;&lt;/div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;/div&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;script&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>// ======= DATA: HIER DEINE BILDER + LINKS EINTRAGEN (HTTPS!) =======</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const PAINTINGS = [</p>
+<p class="p1"><span class="Apple-converted-space">    </span>{</p>
+<p class="p1"><span class="Apple-converted-space">      </span>title: "Echo der Gedanken",</p>
+<p class="p3"><span class="s1"><span class="Apple-converted-space">      </span>img: "</span>https://d2j6dbq0eux0bg.cloudfront.net/images/73553376/4842427586.png<span class="s1">",</span></p>
+<p class="p3"><span class="s1"><span class="Apple-converted-space">      </span>url: "</span>https://d2j6dbq0eux0bg.cloudfront.net/images/73553376/4842427586.png<span class="s1">",</span></p>
+<p class="p1"><span class="Apple-converted-space">      </span>x: -2.2, y: 1.45, z: -2.9, w: 1.2, h: 0.9</p>
+<p class="p1"><span class="Apple-converted-space">    </span>},</p>
+<p class="p1"><span class="Apple-converted-space">    </span>{</p>
+<p class="p1"><span class="Apple-converted-space">      </span>title: "Rote Treppe",</p>
+<p class="p3"><span class="s1"><span class="Apple-converted-space">      </span>img: "</span>https://d2j6dbq0eux0bg.cloudfront.net/images/73553376/4842427586.png<span class="s1">",</span></p>
+<p class="p3"><span class="s1"><span class="Apple-converted-space">      </span>url: "</span>https://d2j6dbq0eux0bg.cloudfront.net/images/73553376/4842427586.png<span class="s1">",</span></p>
+<p class="p1"><span class="Apple-converted-space">      </span>x: 0.0, y: 1.45, z: -2.9, w: 1.2, h: 0.9</p>
+<p class="p1"><span class="Apple-converted-space">    </span>},</p>
+<p class="p1"><span class="Apple-converted-space">    </span>{</p>
+<p class="p1"><span class="Apple-converted-space">      </span>title: "Ritterschlag",</p>
+<p class="p3"><span class="s1"><span class="Apple-converted-space">      </span>img: "</span>https://d2j6dbq0eux0bg.cloudfront.net/images/73553376/4842427586.png“<span class="s1">,</span></p>
+<p class="p3"><span class="s1"><span class="Apple-converted-space">      </span>url: "</span>https://d2j6dbq0eux0bg.cloudfront.net/images/73553376/4842427586.png<span class="s1">",</span></p>
+<p class="p1"><span class="Apple-converted-space">      </span>x: 2.2, y: 1.45, z: -2.9, w: 1.2, h: 0.9</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">  </span>];</p>
+<p class="p1"><span class="Apple-converted-space">  </span>// ================================================================</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>(function(){</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const mount = document.getElementById('app');</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>// Scene / Camera / Renderer</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const scene = new THREE.Scene();</p>
+<p class="p1"><span class="Apple-converted-space">    </span>scene.background = new THREE.Color(0x121214);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>const camera = new THREE.PerspectiveCamera(60, 16/9, 0.1, 100);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>camera.position.set(0, 1.6, 4);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });</p>
+<p class="p1"><span class="Apple-converted-space">    </span>mount.appendChild(renderer.domElement);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>function resize(){</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const w = mount.clientWidth || window.innerWidth;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const h = mount.clientHeight || window.innerHeight;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>camera.aspect = w/h;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>camera.updateProjectionMatrix();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>renderer.setSize(w, h, false);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>window.addEventListener('resize', resize, {passive:true});</p>
+<p class="p1"><span class="Apple-converted-space">    </span>resize();</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>// Lights</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const hemi = new THREE.HemisphereLight(0xffffff, 0x222233, 0.7);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>scene.add(hemi);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const key = new THREE.DirectionalLight(0xffffff, 1.0);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>key.position.set(3,5,2);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>key.castShadow = false;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>scene.add(key);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>// Room (inside of a box)</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const room = new THREE.Mesh(</p>
+<p class="p1"><span class="Apple-converted-space">      </span>new THREE.BoxGeometry(8, 3, 6),</p>
+<p class="p1"><span class="Apple-converted-space">      </span>new THREE.MeshStandardMaterial({ color:0x0f0f12, side:THREE.BackSide, roughness:0.9 })</p>
+<p class="p1"><span class="Apple-converted-space">    </span>);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>scene.add(room);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>const floor = new THREE.Mesh(</p>
+<p class="p1"><span class="Apple-converted-space">      </span>new THREE.PlaneGeometry(8, 6),</p>
+<p class="p1"><span class="Apple-converted-space">      </span>new THREE.MeshStandardMaterial({ color:0x151518, roughness:1 })</p>
+<p class="p1"><span class="Apple-converted-space">    </span>);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>floor.rotation.x = -Math.PI/2;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>floor.position.y = 0;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>scene.add(floor);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>// Controls: Orbit (Fallback/mobil) + PointerLock (Walk)</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const orbit = new THREE.OrbitControls(camera, renderer.domElement);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>orbit.target.set(0, 1.4, 0);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>orbit.enableDamping = true;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>const plc = new THREE.PointerLockControls(camera, renderer.domElement);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>let walkMode = false;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>document.getElementById('walkBtn').addEventListener('click', () =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (!walkMode) {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>plc.lock();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>} else {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>plc.unlock();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>});</p>
+<p class="p1"><span class="Apple-converted-space">    </span>plc.addEventListener('lock', () =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>walkMode = true;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>document.getElementById('walkBtn').textContent = "🐭 Laufmodus aktiv (ESC beendet)";</p>
+<p class="p1"><span class="Apple-converted-space">    </span>});</p>
+<p class="p1"><span class="Apple-converted-space">    </span>plc.addEventListener('unlock', () =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>walkMode = false;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>document.getElementById('walkBtn').textContent = "🎮 Laufmodus aktivieren";</p>
+<p class="p1"><span class="Apple-converted-space">    </span>});</p>
+<p class="p1"><span class="Apple-converted-space">    </span>document.getElementById('resetBtn').addEventListener('click', () =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>camera.position.set(0,1.6,4);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>orbit.target.set(0,1.4,0);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>orbit.update();</p>
+<p class="p1"><span class="Apple-converted-space">    </span>});</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>// Movement (WASD)</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const keys = { w:false, a:false, s:false, d:false, ArrowUp:false, ArrowDown:false, ArrowLeft:false, ArrowRight:false };</p>
+<p class="p1"><span class="Apple-converted-space">    </span>document.addEventListener('keydown', e =&gt; { if (e.key in keys) keys[e.key] = true; });</p>
+<p class="p1"><span class="Apple-converted-space">    </span>document.addEventListener('keyup', <span class="Apple-converted-space">  </span>e =&gt; { if (e.key in keys) keys[e.key] = false; });</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>// Mobile Joystick</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const joy = document.getElementById('joy');</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const joyStick = document.getElementById('joyStick');</p>
+<p class="p1"><span class="Apple-converted-space">    </span>let joyActive = false, joyVec = {x:0,y:0};</p>
+<p class="p1"><span class="Apple-converted-space">    </span>function joySet(x, y){</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const R = 48; // max offset</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const len = Math.hypot(x,y) || 1;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const k = Math.min(1, len / R);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const nx = (x/len) * k, ny = (y/len) * k;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>joyStick.style.transform = `translate(${nx*R}px, ${ny*R}px)`;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>joyVec.x = nx; joyVec.y = ny;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>function joyReset(){ joySet(0,0); joyActive=false; }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>joy.addEventListener('touchstart', e =&gt; { joyActive = true; }, {passive:true});</p>
+<p class="p1"><span class="Apple-converted-space">    </span>joy.addEventListener('touchmove', e =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const rect = joy.getBoundingClientRect();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const t = e.touches[0];</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const x = t.clientX - (rect.left + rect.width/2);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const y = t.clientY - (rect.top<span class="Apple-converted-space">  </span>+ rect.height/2);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>joySet(x, y);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}, {passive:true});</p>
+<p class="p1"><span class="Apple-converted-space">    </span>joy.addEventListener('touchend', e =&gt; { joyReset(); }, {passive:true});</p>
+<p class="p1"><span class="Apple-converted-space">    </span>joy.addEventListener('touchcancel', e =&gt; { joyReset(); }, {passive:true});</p>
+<p class="p1"><span class="Apple-converted-space">    </span>joyReset();</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>// Paintings (clickable)</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const loader = new THREE.TextureLoader();</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const clickable = [];</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>function addPainting({ title, img, url, w=1.0, h=0.7, x=0, y=1.45, z=-2.9, ry=0 }) {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const frame = new THREE.Mesh(</p>
+<p class="p1"><span class="Apple-converted-space">        </span>new THREE.PlaneGeometry(w+0.06, h+0.06),</p>
+<p class="p1"><span class="Apple-converted-space">        </span>new THREE.MeshStandardMaterial({ color:0x222228, metalness:0.2, roughness:0.6 })</p>
+<p class="p1"><span class="Apple-converted-space">      </span>);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const mat = new THREE.MeshStandardMaterial({ roughness:0.9, metalness:0 });</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (img) {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>const tex = loader.load(img);</p>
+<p class="p1"><span class="Apple-converted-space">        </span>if (THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>mat.map = tex;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>} else {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>mat.color = new THREE.Color(0x8888ff);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>}</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const art = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>art.position.z = 0.005;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">      </span>const group = new THREE.Group();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>group.add(frame, art);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>group.position.set(x, y, z);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>group.rotation.y = ry;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>group.userData = { title, url };</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">      </span>// spot light like gallery lamp</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const spot = new THREE.SpotLight(0xffffff, 0.6, 3, Math.PI/6, 0.3, 1.0);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>spot.position.set(x, y+0.8, z+0.4);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>spot.target = group;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>scene.add(spot, spot.target);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">      </span>clickable.push(group);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>scene.add(group);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>return group;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>// Add all paintings</p>
+<p class="p1"><span class="Apple-converted-space">    </span>PAINTINGS.forEach(p =&gt; addPainting(p));</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>// Raycast / click</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const ray = new THREE.Raycaster();</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const pointer = new THREE.Vector2();</p>
+<p class="p1"><span class="Apple-converted-space">    </span>let hovered = null;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>function setPointerFromEvent(e) {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const rect = renderer.domElement.getBoundingClientRect();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const cx = ((e.clientX ?? e.touches?.[0]?.clientX ?? 0) - rect.left) / rect.width;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const cy = ((e.clientY ?? e.touches?.[0]?.clientY ?? 0) - rect.top) / rect.height;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>pointer.set(cx*2-1, -(cy*2-1));</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>function updateHover() {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>ray.setFromCamera(pointer, camera);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const hits = ray.intersectObjects(clickable, true);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const hitGroup = hits.length ? hits[0].object.parent : null;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (hovered !== hitGroup) {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>hovered = hitGroup;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>renderer.domElement.style.cursor = hovered ? 'pointer' : (walkMode ? 'crosshair' : 'grab');</p>
+<p class="p1"><span class="Apple-converted-space">      </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>function handleActivate() {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (!hovered) return;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const { url } = hovered.userData || {};</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (url) window.open(url, "_blank", "noopener");</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>renderer.domElement.addEventListener('mousemove', e =&gt; { setPointerFromEvent(e); updateHover(); }, {passive:true});</p>
+<p class="p1"><span class="Apple-converted-space">    </span>renderer.domElement.addEventListener('touchmove', e =&gt; { setPointerFromEvent(e); updateHover(); }, {passive:true});</p>
+<p class="p1"><span class="Apple-converted-space">    </span>renderer.domElement.addEventListener('click', handleActivate);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>renderer.domElement.addEventListener('touchend', handleActivate);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>// Simple walk physics</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const clock = new THREE.Clock();</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const speed = 2.0; // m/s</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const roomBounds = { x: 3.6, z: 2.6 }; // inside box slightly smaller than 8x6</p>
+<p class="p1"><span class="Apple-converted-space">    </span>function movePlayer(dt) {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>let vx = 0, vz = 0;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">      </span>// Keyboard</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (keys.w || keys.ArrowUp)<span class="Apple-converted-space">    </span>vz -= 1;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (keys.s || keys.ArrowDown)<span class="Apple-converted-space">  </span>vz += 1;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (keys.a || keys.ArrowLeft)<span class="Apple-converted-space">  </span>vx -= 1;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (keys.d || keys.ArrowRight) vx += 1;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">      </span>// Joystick (mobile)</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (Math.abs(joyVec.x) &gt; 0.01 || Math.abs(joyVec.y) &gt; 0.01) {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>vx += joyVec.x;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>vz += joyVec.y; // joystick y positive = down; wir nehmen es als vor/zurück</p>
+<p class="p1"><span class="Apple-converted-space">      </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (vx || vz) {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>const len = Math.hypot(vx, vz) || 1;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>vx /= len; vz /= len;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">        </span>// Bewegungsrichtung relativ zur Kamera</p>
+<p class="p1"><span class="Apple-converted-space">        </span>const dir = new THREE.Vector3();</p>
+<p class="p1"><span class="Apple-converted-space">        </span>camera.getWorldDirection(dir); // vorwärts</p>
+<p class="p1"><span class="Apple-converted-space">        </span>dir.y = 0; dir.normalize();</p>
+<p class="p1"><span class="Apple-converted-space">        </span>const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0,1,0)).negate();</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">        </span>const deltaPos = new THREE.Vector3()</p>
+<p class="p1"><span class="Apple-converted-space">          </span>.addScaledVector(dir, vz * speed * dt)</p>
+<p class="p1"><span class="Apple-converted-space">          </span>.addScaledVector(right, vx * speed * dt);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">        </span>const np = plc.getObject().position.clone().add(deltaPos);</p>
+<p class="p1"><span class="Apple-converted-space">        </span>// Kollision: bleib im Raum</p>
+<p class="p1"><span class="Apple-converted-space">        </span>np.x = THREE.MathUtils.clamp(np.x, -roomBounds.x, roomBounds.x);</p>
+<p class="p1"><span class="Apple-converted-space">        </span>np.z = THREE.MathUtils.clamp(np.z, -roomBounds.z, roomBounds.z);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">        </span>plc.getObject().position.copy(np);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>}</p>
+<p class="p1"><span class="Apple-converted-space">      </span>// immer auf Augenhöhe</p>
+<p class="p1"><span class="Apple-converted-space">      </span>plc.getObject().position.y = 1.6;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>// Start position in walk mode</p>
+<p class="p1"><span class="Apple-converted-space">    </span>plc.getObject().position.set(0,1.6, 1.8);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>scene.add(plc.getObject()); // attach to scene</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>// Main loop</p>
+<p class="p1"><span class="Apple-converted-space">    </span>renderer.setAnimationLoop(() =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const dt = clock.getDelta();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (walkMode) {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>movePlayer(dt);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>} else {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>orbit.update();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>}</p>
+<p class="p1"><span class="Apple-converted-space">      </span>renderer.render(scene, camera);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>});</p>
+<p class="p1"><span class="Apple-converted-space">  </span>})();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;/script&gt;</p>
+<p class="p1">&lt;/body&gt;</p>
+<p class="p1">&lt;/html&gt;</p>
+</body>
+</html>
